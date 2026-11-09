@@ -867,6 +867,9 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     const toTrash = (r) => trash.push({ n: r.n, h: r.h, s: r.s, k: r.k, d: new Date().toISOString() });
     const fail = (m) => new Promise((_, j) => setTimeout(() => j(new Error(m)), 250));
     const key = (s) => String(s || '').trim().toLowerCase();
+    const idOf = (x) => x && typeof x === 'object' ? { n: x.n, s: x.s || '' } : { n: x, s: '' };
+    const sk = (s) => key(s) || 'pcs';
+    const isIt = (r, b) => key(r.n) === key(b.n) && (!b.s || sk(r.s) === sk(b.s));
     let demoPin = (location.search.match(/[?&]pin=(\d{4,8})/) || [])[1] || null; // ?pin=1234 = PIN sudah dibuat
     const fresh = new Set(); // barang yang baru ditambah boleh dihapus tanpa PIN
     const needPin = (p) => !demoPin ? 'Belum ada PIN. Buat PIN dulu.' : !p ? 'PIN diperlukan.' : p !== demoPin ? 'PIN salah.' : '';
@@ -890,13 +893,14 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
         { jenis: 'kategori', nama: 'Minyak botol kecil', nilai: 'SEMBAKO', alasan: 'Belum ada kategori' },
         { jenis: 'satuan', nama: 'Beras 99 5 kg', nilai: 'KARUNG', alasan: 'Contoh saran satuan' }].filter((x) => rows.some((y) => key(y.n) === key(x.nama))) }), 900)),
       terapkanPerubahan: (list, pin) => {
-        if (list.some((c) => c.jenis === 'hapus' && !fresh.has(key(c.n))) && needPin(pin)) return fail(needPin(pin));
+        if (list.some((c) => c.jenis === 'hapus' && !fresh.has(key(c.n) + '|' + sk(c.s))) && needPin(pin)) return fail(needPin(pin));
         const hasil = { harga: 0, baru: 0, ubah: 0, hapus: 0, ok: [], gagal: [] }, now = new Date().toISOString();
         list.forEach((c, i) => {
-          const at = rows.findIndex((r) => key(r.n) === key(c.jenis === 'ubah' ? c.lama : c.n));
+          const at = c.jenis === 'baru' ? rows.findIndex((r) => isIt(r, { n: c.n, s: c.s || 'PCS' }))
+            : rows.findIndex((r) => isIt(r, c.jenis === 'ubah' ? { n: c.lama, s: c.lamaS } : { n: c.n, s: c.s }));
           if (c.jenis === 'baru') {
             if (at >= 0) { hasil.gagal.push(c.n + ' sudah ada di daftar.'); return; }
-            rows.push({ n: c.n, h: c.h, s: c.s || 'PCS', k: c.k, u: now }); fresh.add(key(c.n)); hasil.baru++;
+            rows.push({ n: c.n, h: c.h, s: c.s || 'PCS', k: c.k, u: now }); fresh.add(key(c.n) + '|' + sk(c.s)); hasil.baru++;
           } else if (at < 0) { hasil.gagal.push('"' + (c.lama || c.n) + '" tidak ditemukan.'); return; }
           else if (c.jenis === 'harga') { rows[at].h = c.h; rows[at].u = now; hasil.harga++; }
           else if (c.jenis === 'ubah') { rows[at] = { n: c.n, h: c.h == null ? rows[at].h : c.h, s: c.s, k: c.k, u: now }; hasil.ubah++; }
@@ -907,38 +911,40 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
       },
       aturPin: (b, l) => !/^\d{4,8}$/.test(String(b)) ? fail('PIN harus 4 sampai 8 angka.') : demoPin && needPin(l) ? fail(needPin(l)) : (demoPin = String(b), ok({ ok: true })),
       simpanBarang: (it) => {
-        const same = rows.findIndex((r) => key(r.n) === key(it.n));
-        if (it.baru && same >= 0) return fail('"' + it.n + '" sudah ada di daftar.');
-        const at = it.lama ? rows.findIndex((r) => key(r.n) === key(it.lama)) : same;
-        if (it.lama && same >= 0 && same !== at) return fail('Nama "' + it.n + '" sudah ada di daftar.');
+        const same = rows.findIndex((r) => isIt(r, { n: it.n, s: it.s || 'PCS' }));
+        if (it.baru && same >= 0) return fail('"' + it.n + '" per ' + (it.s || 'PCS') + ' sudah ada di daftar.');
+        const at = it.lama ? rows.findIndex((r) => isIt(r, { n: it.lama, s: it.lamaS })) : same;
+        if (it.lama && same >= 0 && same !== at) return fail('"' + it.n + '" per ' + (it.s || 'PCS') + ' sudah ada di daftar.');
         const v = { n: it.n, h: +it.h, s: it.s || 'PCS', k: it.k, u: new Date().toISOString() };
-        if (at >= 0) rows[at] = v; else { rows.push(v); fresh.add(key(it.n)); }
+        if (at >= 0) rows[at] = v; else { rows.push(v); fresh.add(key(v.n) + '|' + sk(v.s)); }
         return out({ status: at >= 0 ? 'diperbarui' : 'ditambah', nama: it.n });
       },
       hapusBanyak: (names, pin) => {
         if (needPin(pin)) return fail(needPin(pin));
-        const ks = names.map(key), before = rows.length;
-        rows.filter((r) => ks.includes(key(r.n))).forEach(toTrash);
-        rows = rows.filter((r) => !ks.includes(key(r.n)));
+        const ids = names.map(idOf), before = rows.length, kena = (r) => ids.some((b) => isIt(r, b));
+        rows.filter(kena).forEach(toTrash);
+        rows = rows.filter((r) => !kena(r));
         return out({ status: 'dihapus', jumlah: before - rows.length });
       },
-      hapusBarang: (n, pin) => {
-        if (!fresh.has(key(n)) && needPin(pin)) return fail(needPin(pin));
-        fresh.delete(key(n));
-        rows.filter((r) => key(r.n) === key(n)).forEach(toTrash);
-        rows = rows.filter((r) => key(r.n) !== key(n));
-        return out({ status: 'dihapus', nama: n });
+      hapusBarang: (x, pin) => {
+        const b = idOf(x), r = rows.find((y) => isIt(y, b));
+        if (!r) return fail('Barang "' + b.n + '" tidak ditemukan.');
+        const k = key(r.n) + '|' + sk(r.s);
+        if (!fresh.has(k) && needPin(pin)) return fail(needPin(pin));
+        fresh.delete(k); toTrash(r); rows = rows.filter((y) => y !== r);
+        return out({ status: 'dihapus', nama: b.n });
       },
-      ubahHarga: (n, h) => {
-        const r = rows.find((x) => key(x.n) === key(n));
-        if (!r) return fail('Barang "' + n + '" tidak ditemukan.');
+      ubahHarga: (x, h) => {
+        const b = idOf(x), r = rows.find((y) => isIt(y, b));
+        if (!r) return fail('Barang "' + b.n + '" tidak ditemukan.');
         r.h = h; r.u = new Date().toISOString();
-        return new Promise((res) => setTimeout(() => res({ status: 'diperbarui', nama: r.n, h, u: r.u }), 400));
+        return new Promise((res) => setTimeout(() => res({ status: 'diperbarui', nama: r.n, s: r.s, h, u: r.u }), 400));
       },
-      kembalikanBarang: (n) => {
-        let i = -1; trash.forEach((x, j) => { if (key(x.n) === key(n)) i = j; });
+      kembalikanBarang: (y) => {
+        const b = idOf(y), n = b.n;
+        let i = -1; trash.forEach((x, j) => { if (isIt(x, b)) i = j; });
         if (i < 0) return fail('Barang "' + n + '" tidak ada di tab Terhapus.');
-        if (rows.some((r) => key(r.n) === key(n))) return fail('"' + n + '" sudah ada di daftar harga.');
+        if (rows.some((r) => isIt(r, { n, s: trash[i].s || 'PCS' }))) return fail('"' + n + '" sudah ada di daftar harga.');
         const x = trash.splice(i, 1)[0];
         rows.push({ n: x.n, h: x.h, s: x.s, k: x.k, u: new Date().toISOString() });
         return out({ status: 'dikembalikan', nama: x.n });
@@ -1107,6 +1113,18 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
   let catFilter = store.get('k77gs.cat', '');
   const NO_CAT = '__tanpa_kategori__', NO_PRICE = '__tanpa_harga__';
   const hasPrice = (p) => p.h > 0;
+  // Satu nama boleh punya beberapa satuan (mis. AQUA 600 ML per DUS dan per BOTOL): barang dikenali dari nama + satuan.
+  const satKey = (s) => norm(s) || 'pcs';
+  const pKey = (p) => norm(p.n) + '|' + satKey(p.s);
+  const bId = (p) => ({ n: p.n, s: p.s }); // dikirim ke server
+  const exactP = (n, s) => PRICES.find((x) => norm(x.n) === norm(n) && satKey(x.s) === satKey(s)) || null;
+  // satuan cocok kalau ada; selain itu barang pertama bernama itu
+  const findP = (n, s) => (s && exactP(n, s)) || PRICES.find((x) => norm(x.n) === norm(n)) || null;
+  const byKey = (k) => PRICES.find((x) => pKey(x) === k) || null;
+  // baris nota milik barang ini (baris lama tanpa satuan dicocokkan dari namanya saja)
+  const lineOf = (x, p) => !x.pl && norm(x.name) === norm(p.n) && (!String(x.unit || '').trim() || satKey(x.unit) === satKey(p.s));
+  const multiSat = (p) => PRICES.some((x) => x !== p && norm(x.n) === norm(p.n));
+  const label = (p) => p.n + (multiSat(p) ? ' (' + p.s + ')' : '');
   const passCat = (p) => !catFilter || (catFilter === NO_PRICE ? !hasPrice(p) : catOf(p) === catFilter);
   const catOf = (p) => p.k || NO_CAT;
   const isRecent = (p) => p.u && Date.now() - new Date(p.u).getTime() < 3 * 86400e3;
@@ -1117,7 +1135,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     const named = Object.keys(cats).filter((c) => c !== NO_CAT).sort((a, b) => a.localeCompare(b, 'id'));
     const noPrice = PRICES.filter((p) => !hasPrice(p)).length;
     if (catFilter === NO_PRICE ? !noPrice : catFilter && !cats[catFilter]) catFilter = '';
-    [...picked].forEach((k) => { if (!PRICES.some((p) => norm(p.n) === k)) picked.delete(k); });
+    [...picked].forEach((k) => { if (!byKey(k)) picked.delete(k); });
 
     // ringkasan
     $('#stCount').textContent = nf.format(PRICES.length);
@@ -1138,7 +1156,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
   // sel harga: tombol (ketuk untuk ubah) atau kolom isian saat sedang diubah
   let pe = null, rendering = false; // pe = { key, val } barang yang harganya sedang diketik
   function priceCell(p, i) {
-    if (pe && pe.key === norm(p.n)) return '<input class="pin" type="number" inputmode="numeric" min="0" step="1" enterkeyhint="done" placeholder="Harga" value="' + esc(pe.val) + '" aria-label="Harga baru ' + esc(p.n) + '">';
+    if (pe && pe.key === pKey(p)) return '<input class="pin" type="number" inputmode="numeric" min="0" step="1" enterkeyhint="done" placeholder="Harga" value="' + esc(pe.val) + '" aria-label="Harga baru ' + esc(p.n) + '">';
     return hasPrice(p)
       ? '<button type="button" class="tag pricebtn' + (p.saving ? ' saving' : '') + '" data-price="' + i + '" title="Ketuk untuk ubah harga">' + tagRp(p.h) + '</button>'
       : '<button type="button" class="tag nil pricebtn" data-price="' + i + '" title="Ketuk untuk isi harga">Belum ada harga</button>';
@@ -1146,23 +1164,23 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
   function openPrice(p, btn) {
     if (!p || p.saving) return;
     const old = $('#dbody .pin'); if (old) old.blur(); // harga lain yang sedang diketik disimpan dulu
-    pe = { key: norm(p.n), val: hasPrice(p) ? String(p.h) : '' };
+    pe = { key: pKey(p), val: hasPrice(p) ? String(p.h) : '' };
     const td = btn.closest('td'); td.innerHTML = priceCell(p, PRICES.indexOf(p));
     const inp = td.querySelector('.pin'); inp.focus(); try { inp.select(); } catch (e) {}
   }
   async function commitPrice(inp, cancel) {
     if (!pe) return;
     const key = pe.key, raw = String(inp.value).trim(); pe = null;
-    const find = () => PRICES.find((x) => norm(x.n) === key);
+    const find = () => byKey(key);
     const p = find(), td = inp.closest('td'), h = Math.round(Number(raw));
     if (cancel || !p || raw === '' || !isFinite(h) || h < 0 || h === p.h) { if (td && p) td.innerHTML = priceCell(p, PRICES.indexOf(p)); return; }
     const old = p.h; p.h = h; p.saving = true;
     if (td) td.innerHTML = priceCell(p, PRICES.indexOf(p));
     let cur = p;
     try {
-      const d = await call('ubahHarga', p.n, h);
+      const d = await call('ubahHarga', bId(p), h);
       cur = find() || p; cur.h = Math.round(Number(d.h)) || 0; cur.u = d.u || new Date().toISOString();
-      toast('Harga ' + cur.n + ': ' + (hasPrice(cur) ? rp(cur.h) : 'belum ada harga'));
+      toast('Harga ' + cur.n + ': ' + (hasPrice(cur) ? rp(cur.h) + ' per ' + cur.s : 'belum ada harga'));
     } catch (err) {
       cur = find() || p; cur.h = old;
       toast('Gagal menyimpan harga: ' + cleanErr(err));
@@ -1190,8 +1208,8 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
       $('#dbody').innerHTML = '<tr><td colspan="6" class="none">' + (PRICES.length ? 'Tidak ada barang yang cocok.' : 'Belum ada data. Ketuk “Muat ulang”.') + '</td></tr>';
     } else {
       $('#dbody').innerHTML = list.map((p) => {
-        const i = PRICES.indexOf(p), inN = qtyInNota(p.n);
-        const on = picked.has(norm(p.n));
+        const i = PRICES.indexOf(p), inN = qtyInNota(p), k = pKey(p);
+        const on = picked.has(k);
         return '<tr data-i="' + i + '"' + (on ? ' class="picked"' : '') + '>' +
           '<td class="c-sel"><input type="checkbox"' + (on ? ' checked' : '') + ' aria-label="Pilih ' + esc(p.n) + '"></td>' +
           '<td class="c-name"><span class="nm">' + esc(p.n) + '</span>' + (isRecent(p) ? '<span class="new">BARU DIUBAH</span>' : '') +
@@ -1202,8 +1220,8 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
           '<td class="c-act"><div class="acts">' +
             '<button type="button" class="btn sm" data-edit="' + i + '">Ubah</button>' +
             '<button type="button" class="btn sm" data-nota="' + i + '">+ Nota' + (inN ? ' (' + nfq.format(inN) + ')' : '') + '</button>' +
-            (rowDel.busy === p.n ? '<button type="button" class="btn sm danger" disabled>Menghapus…</button>'
-              : '<button type="button" class="btn sm' + (rowDel.n === p.n ? ' danger' : '') + '" data-del="' + i + '">' + (rowDel.n === p.n ? 'Yakin hapus?' : 'Hapus') + '</button>') +
+            (rowDel.busy === k ? '<button type="button" class="btn sm danger" disabled>Menghapus…</button>'
+              : '<button type="button" class="btn sm' + (rowDel.n === k ? ' danger' : '') + '" data-del="' + i + '">' + (rowDel.n === k ? 'Yakin hapus?' : 'Hapus') + '</button>') +
           '</div></td></tr>';
       }).join('');
     }
@@ -1232,10 +1250,11 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
   const rowDel = { n: null, busy: null, t: 0 };
   async function delRow(p) {
     clearTimeout(rowDel.t);
-    if (rowDel.n !== p.n) { rowDel.n = p.n; rowDel.t = setTimeout(() => { rowDel.n = null; renderTable(); }, 4000); renderTable(); return; }
-    rowDel.n = null; rowDel.busy = p.n; renderTable();
-    try { applyData(await callPin('hapusBarang', p.n)); toast('Dihapus: ' + p.n + '. Bisa dikembalikan dari Barang terhapus.'); }
-    catch (err) { toast('Gagal menghapus ' + p.n + ': ' + cleanErr(err)); }
+    const k = pKey(p), nm = label(p);
+    if (rowDel.n !== k) { rowDel.n = k; rowDel.t = setTimeout(() => { rowDel.n = null; renderTable(); }, 4000); renderTable(); return; }
+    rowDel.n = null; rowDel.busy = k; renderTable();
+    try { applyData(await callPin('hapusBarang', bId(p))); toast('Dihapus: ' + nm + '. Bisa dikembalikan dari Barang terhapus.'); }
+    catch (err) { toast('Gagal menghapus ' + nm + ': ' + cleanErr(err)); }
     finally { rowDel.busy = null; renderTable(); }
   }
   $('#dbody').addEventListener('click', (e) => {
@@ -1260,7 +1279,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     const x = TRASH[+b.dataset.restore]; if (!x) return;
     b.disabled = true; b.textContent = 'Mengembalikan…';
     try {
-      applyData(await call('kembalikanBarang', x.n));
+      applyData(await call('kembalikanBarang', { n: x.n, s: x.s || 'PCS' }));
       toast('Dikembalikan ke daftar harga: ' + x.n);
     } catch (err) {
       b.disabled = false; b.textContent = 'Kembalikan'; toast('Gagal mengembalikan: ' + cleanErr(err));
@@ -1285,11 +1304,11 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     $('#selModeBtn').setAttribute('aria-pressed', String(on));
     renderTable();
   }
-  function togglePick(p) { if (!p) return; const k = norm(p.n); if (picked.has(k)) picked.delete(k); else picked.add(k); disarmBulk(); }
+  function togglePick(p) { if (!p) return; const k = pKey(p); if (picked.has(k)) picked.delete(k); else picked.add(k); disarmBulk(); }
   $('#selModeBtn').addEventListener('click', () => setSelecting(!selecting));
   $('#bulkCancel').addEventListener('click', () => setSelecting(false));
   $('#bulkDel').addEventListener('click', async () => {
-    const names = PRICES.filter((p) => picked.has(norm(p.n))).map((p) => p.n);
+    const names = PRICES.filter((p) => picked.has(pKey(p))).map(bId);
     if (!names.length) return;
     const b = $('#bulkDel');
     if (!bulkArmed) { bulkArmed = true; b.classList.add('danger'); b.textContent = 'Yakin hapus ' + names.length + ' barang? Ketuk lagi'; return; }
@@ -1345,7 +1364,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
   function fShotMsg(t, kind) { const m = $('#fShotMsg'); m.textContent = t || F_SHOT_TIP; m.className = 'hint' + (t && kind ? ' ' + kind : ''); }
   function fApplyShot(r) {
     if (!r.nama && !r.sudah_ada) { fShotMsg('Tidak terbaca sebagai kemasan barang.' + (r.catatan ? ' ' + r.catatan : '') + ' Coba foto lebih dekat.', 'bad'); return; }
-    const ada = PRICES.find((x) => norm(x.n) === norm(r.sudah_ada || r.nama)) || null;
+    const ada = findP(r.sudah_ada || r.nama, r.satuan);
     const tertera = r.harga_tertera ? ' Harga tertera di kemasan: ' + rp(r.harga_tertera) + '.' : '';
     if (ada && ada !== editing) {
       // sudah ada: formulir diisi barang itu, jadi Simpan = memperbarui, bukan membuat dobel
@@ -1376,11 +1395,18 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
   $('#newItemBtn').addEventListener('click', () => openItem(null));
   $('#fCancel').addEventListener('click', closeItem);
   $('#itemDlg').addEventListener('click', (e) => { if (e.target.id === 'itemDlg') closeItem(); });
-  $('#fName').addEventListener('input', () => {
-    const hit = PRICES.find((p) => norm(p.n) === norm($('#fName').value));
-    if (hit && hit !== editing) fMsg(editing ? 'Nama ini sudah dipakai barang lain.' : 'Sudah ada di daftar (' + rp(hit.h) + ' per ' + hit.s + '). Kalau disimpan, harganya diperbarui.', editing ? 'bad' : '');
-    else if (/^(Sudah ada|Nama ini)/.test($('#fMsg').textContent)) fMsg('');
-  });
+  // nama + satuan yang sama sudah ada? (nama sama dengan satuan lain boleh: jual per dus dan per botol)
+  function fDupCheck() {
+    const unit = pickVal($('#fUnit'), $('#fUnitNew')) || 'PCS';
+    const hit = exactP($('#fName').value, unit);
+    const lain = PRICES.filter((p) => norm(p.n) === norm($('#fName').value) && p !== editing && p !== hit);
+    if (hit && hit !== editing) fMsg(editing ? 'Nama + satuan ini sudah dipakai barang lain.' : 'Sudah ada di daftar (' + (hit.h ? rp(hit.h) : 'belum ada harga') + ' per ' + hit.s + '). Kalau disimpan, harganya diperbarui.', editing ? 'bad' : '');
+    else if (lain.length) fMsg('Nama ini sudah ada per ' + lain.map((p) => p.s).join(', ') + '. Dengan satuan ' + unit + ' akan jadi barang tersendiri.');
+    else if (/^(Sudah ada|Nama ini|Nama \+ satuan)/.test($('#fMsg').textContent)) fMsg('');
+  }
+  $('#fName').addEventListener('input', fDupCheck);
+  $('#fUnit').addEventListener('change', fDupCheck);
+  $('#fUnitNew').addEventListener('input', fDupCheck);
   function busy(on, label) {
     ['#fSave', '#fDel', '#fCancel'].forEach((s) => { $(s).disabled = on; });
     if (label) $('#fSave').textContent = on ? label : 'Simpan ke Google Sheet';
@@ -1389,7 +1415,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
   $('#itemForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const item = { n: $('#fName').value.trim().replace(/\s+/g, ' ').toUpperCase(), h: Math.round(Number($('#fPrice').value)), s: pickVal($('#fUnit'), $('#fUnitNew')) || 'PCS', k: pickVal($('#fCat'), $('#fCatNew')) };
-    if (editing) item.lama = editing.n;
+    if (editing) { item.lama = editing.n; item.lamaS = editing.s; }
     if (!item.n) { fMsg('Isi nama barang.', 'bad'); $('#fName').focus(); return; }
     // harga boleh kosong: disimpan sebagai "belum ada harga"
     if (!(item.h >= 0)) { fMsg('Harga tidak boleh minus.', 'bad'); $('#fPrice').focus(); return; }
@@ -1409,10 +1435,10 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
   $('#fDel').addEventListener('click', async () => {
     if (!editing) return;
     if (!delArmed) { delArmed = true; $('#fDel').textContent = 'Yakin hapus? Ketuk lagi'; $('#fDel').classList.add('danger'); return; }
-    const name = editing.n;
+    const name = label(editing), id = bId(editing);
     busy(true); fMsg('Menghapus…');
     try {
-      const d = await callPin('hapusBarang', name);
+      const d = await callPin('hapusBarang', id);
       applyData(d); closeItem(); toast('Dihapus: ' + name + '. Bisa dikembalikan dari Barang terhapus.');
     } catch (err) { handleFail(err); } finally { busy(false); }
   });
@@ -1458,18 +1484,18 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
   const BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
   const whenLong = () => { const d = state.when; return pad(d.getDate()) + ' ' + BULAN[d.getMonth()] + ' ' + d.getFullYear() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); };
   const fmtWhen = () => { const d = state.when; return pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + '/' + d.getFullYear() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); };
-  const qtyInNota = (name) => { const k = norm(name); return state.items.reduce((a, x) => a + (norm(x.name) === k ? qtyOf(x) : 0), 0); };
+  const qtyInNota = (p) => state.items.reduce((a, x) => a + (lineOf(x, p) ? qtyOf(x) : 0), 0);
 
   function addToNota(p) {
     if (!p) return;
     const name = p.n.toUpperCase();
-    const ex = state.items.find((x) => norm(x.name) === norm(name) && num(x.price) === p.h);
+    const ex = state.items.find((x) => lineOf(x, p) && num(x.price) === p.h);
     const empty = state.items.find((x) => !x.name.trim() && !num(x.price));
     if (ex) ex.qty = qtyOf(ex) + 1;
     else if (empty) { empty.name = name; empty.price = p.h; empty.qty = 1; empty.unit = p.s; }
     else state.items.push(newItem(name, 1, p.h, p.s));
     renderRows(); renderAll();
-    toast(p.h ? 'Masuk nota: ' + p.n + ' (' + nfq.format(qtyInNota(p.n)) + ')' : 'Masuk nota: ' + p.n + '. Harganya belum ada, ketik di nota.');
+    toast(p.h ? 'Masuk nota: ' + label(p) + ' (' + nfq.format(qtyInNota(p)) + ')' : 'Masuk nota: ' + label(p) + '. Harganya belum ada, ketik di nota.');
   }
 
   function renderRows() {
@@ -1568,11 +1594,17 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     setTimeout(() => { if (sgInput === el && document.activeElement !== el) hideSugg(); }, 150);
   });
   $('#rows').addEventListener('change', (e) => {
-    if (e.target.dataset.f !== 'name') return;
     const row = e.target.closest('.line');
-    const it = state.items.find((x) => x.id === +row.dataset.id);
-    if (!it) return;
-    const hit = PRICES.find((p) => norm(p.n) === norm(it.name));
+    const it = row && state.items.find((x) => x.id === +row.dataset.id);
+    if (!it || it.pl) return;
+    if (e.target.dataset.f === 'unit') {
+      // satuan diganti ke satuan lain dari barang yang sama di daftar (mis. DUS -> BOTOL): harga ikut satuan itu
+      const p = exactP(it.name, it.unit);
+      if (p && p.h) { it.price = p.h; row.querySelector('[data-f=price]').value = it.price; row.querySelector('.st b').textContent = rp(qtyOf(it) * num(it.price)); renderAll(); }
+      return;
+    }
+    if (e.target.dataset.f !== 'name') return;
+    const hit = findP(it.name, it.unit);
     // satuan ikut barang di daftar; nama di luar daftar memakai satuan yang diketik sendiri (boleh kosong)
     // diisi di tempat (tanpa menggambar ulang baris) supaya ketukan pada saran barang tidak hilang
     if (hit) { it.unit = hit.s; row.querySelector('[data-f=unit]').value = it.unit; }
@@ -1839,38 +1871,41 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
       const nm = String(a.nama || '').trim(), q = num(a.jumlah) || 1;
       if (!nm) return;
       if (a.jenis === 'tambah') {
-        const p = PRICES.find((x) => norm(x.n) === norm(nm));
-        const name = (p ? p.n : nm).toUpperCase(), price = (p && p.h) || num(a.harga), unit = p ? p.s : '';
-        const ex = state.items.find((x) => !x.pl && norm(x.name) === norm(name) && num(x.price) === price);
+        const p = findP(nm, a.satuan);
+        const name = (p ? p.n : nm).toUpperCase(), price = (p && p.h) || num(a.harga), unit = p ? p.s : String(a.satuan || '').toUpperCase();
+        const ex = state.items.find((x) => (p ? lineOf(x, p) : !x.pl && norm(x.name) === norm(name)) && num(x.price) === price);
         const empty = state.items.find((x) => !x.pl && !x.name.trim() && !num(x.price));
         if (ex) ex.qty = qtyOf(ex) + q;
         else if (empty) Object.assign(empty, { name, price: price || 0, qty: q, unit });
         else state.items.push(newItem(name, q, price, unit));
-        done.push({ t: '+ ' + nfq.format(q) + ' ' + name + (price ? ' @ ' + rp(price) : ' (harga belum ada)') + (p ? '' : ', di luar daftar') });
+        done.push({ t: '+ ' + nfq.format(q) + ' ' + name + (unit ? ' ' + unit : '') + (price ? ' @ ' + rp(price) : ' (harga belum ada)') + (p ? '' : ', di luar daftar') });
       } else if (a.jenis === 'harga') {
-        const p = PRICES.find((x) => norm(x.n) === norm(nm)), h = Math.round(num(a.harga));
-        const nb = !p && done.find((d) => d.baru && norm(d.baru.n) === norm(nm)); // barang baru di pesan yang sama
-        if (nb && h) { nb.baru.h = h; state.items.forEach((x) => { if (!x.pl && norm(x.name) === norm(nm) && !num(x.price)) x.price = h; }); return; }
+        const p = findP(nm, a.satuan), h = Math.round(num(a.harga));
+        const nb = done.find((d) => d.baru && norm(d.baru.n) === norm(nm) && (!a.satuan || satKey(d.baru.s) === satKey(a.satuan))); // barang baru di pesan yang sama
+        if (nb && h) { nb.baru.h = h; state.items.forEach((x) => { if (lineOf(x, nb.baru) && !num(x.price)) x.price = h; }); return; }
         if (!p || !h) { done.push({ t: (p ? 'Harga tidak jelas untuk ' : 'Tidak ada di daftar harga: ') + nm, x: true }); return; }
-        state.items.forEach((x) => { if (!x.pl && norm(x.name) === norm(p.n)) x.price = h; }); // baris nota ikut harga baru
-        done.push({ t: 'Harga ' + p.n + ': ' + rp(h) + ' (menyimpan…)', save: { n: p.n, h, old: p.h } });
+        state.items.forEach((x) => { if (lineOf(x, p)) x.price = h; }); // baris nota ikut harga baru
+        done.push({ t: 'Harga ' + label(p) + ': ' + rp(h) + ' (menyimpan…)', save: { n: p.n, s: p.s, h, old: p.h } });
       } else if (a.jenis === 'baru') { // barang baru ke daftar harga (Google Sheet)
         const n = nm.replace(/\s+/g, ' ').toUpperCase(), h = Math.round(num(a.harga));
-        const p = PRICES.find((x) => norm(x.n) === norm(n));
+        const s = (String(a.satuan || '').trim().replace(/\s+/g, ' ') || 'PCS').toUpperCase(), k = String(a.kategori || '').trim().replace(/\s+/g, ' ').toUpperCase();
+        const p = exactP(n, s); // nama sama dengan satuan lain = barang tersendiri (mis. per BOTOL di samping per DUS)
         if (p) { // sudah ada: cukup simpan harganya kalau disebut
-          if (h && h !== p.h) done.push({ t: 'Harga ' + p.n + ': ' + rp(h) + ' (menyimpan…)', save: { n: p.n, h, old: p.h } });
-          else done.push({ t: p.n + ' sudah ada di daftar' + (p.h ? ', ' + rp(p.h) : ''), x: true });
+          if (h && h !== p.h) done.push({ t: 'Harga ' + label(p) + ': ' + rp(h) + ' (menyimpan…)', save: { n: p.n, s: p.s, h, old: p.h } });
+          else done.push({ t: label(p) + ' sudah ada di daftar' + (p.h ? ', ' + rp(p.h) : ''), x: true });
           return;
         }
-        const s = (String(a.satuan || '').trim().replace(/\s+/g, ' ') || 'PCS').toUpperCase(), k = String(a.kategori || '').trim().replace(/\s+/g, ' ').toUpperCase();
-        if (h) state.items.forEach((x) => { if (!x.pl && norm(x.name) === norm(n) && !num(x.price)) x.price = h; });
+        if (h) state.items.forEach((x) => { if (lineOf(x, { n, s }) && !num(x.price)) x.price = h; });
         done.push({ t: 'Barang baru: ' + n + ' (menyimpan…)', baru: { n, h, s, k } });
       } else if (a.jenis === 'massal') { // ubah harga banyak barang: diperiksa kasir dulu di layar tinjau
-        const ps = (a.daftar || []).map((n) => PRICES.find((x) => norm(x.n) === norm(n))).filter((p, i, arr) => p && arr.indexOf(p) === i);
+        const want = new Set((a.daftar || []).map(norm)); // nama yang punya beberapa satuan: semua satuannya ikut
+        const ps = PRICES.filter((x) => want.has(norm(x.n)));
         if (!ps.length) { done.push({ t: 'Tidak ketemu barang untuk diubah: ' + nm, x: true }); return; }
         done.push({ t: 'Ubah harga ' + ps.length + ' barang (' + nm + '): periksa dulu sebelum disimpan', x: true, massal: { ps, cara: a.cara, nilai: Number(a.nilai) || 0, judul: nm } });
       } else {
-        const it = state.items.find((x) => norm(x.name) === norm(nm)) || state.items.find((x) => norm(x.name).includes(norm(nm)));
+        const su = String(a.satuan || '').trim(), cocokSat = (x) => !su || satKey(x.unit) === satKey(su);
+        const it = state.items.find((x) => norm(x.name) === norm(nm) && cocokSat(x)) || state.items.find((x) => norm(x.name) === norm(nm)) ||
+          state.items.find((x) => norm(x.name).includes(norm(nm)));
         if (!it) { done.push({ t: 'Tidak ada di nota: ' + nm, x: true }); return; }
         if (a.jenis === 'kurangi' && qtyOf(it) > q) { it.qty = qtyOf(it) - q; done.push({ t: '− ' + nfq.format(q) + ' ' + it.name + ' (sisa ' + nfq.format(qtyOf(it)) + ')' }); }
         else { state.items = state.items.filter((x) => x !== it); done.push({ t: 'Dihapus: ' + it.name }); }
@@ -1887,7 +1922,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
       .map((m) => ({ r: m.r, t: m.t + (m.done && m.done.length ? '\n[Nota: ' + m.done.map((d) => d.t).join('; ') + ']' : '') }));
     AI_LOG.push({ r: 'me', t: text || 'Foto barang', img: gambar ? gambar.thumb : '' }, { r: 'wait', t: gambar ? 'Melihat foto…' : '' }); aiRender();
     $('#aiIn').value = ''; aiGrow();
-    const nota = state.items.filter((i) => i.name.trim()).map((i) => ({ n: i.name.trim(), q: qtyOf(i), h: num(i.price) }));
+    const nota = state.items.filter((i) => i.name.trim()).map((i) => ({ n: i.name.trim(), q: qtyOf(i), s: String(i.unit || '').trim(), h: num(i.price) }));
     try {
       const r = await call('tanyaAsisten', text, hist, nota, gambar ? { mime: gambar.mime, data: gambar.data } : null);
       AI_LOG.pop();
@@ -1910,11 +1945,12 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
         for (const d of saves) { // harga / barang baru dari asisten disimpan ke Google Sheet
           if (d.save) {
             try {
-              const res = await call('ubahHarga', d.save.n, d.save.h);
-              const p = PRICES.find((x) => norm(x.n) === norm(d.save.n));
+              const id = { n: d.save.n, s: d.save.s };
+              const res = await call('ubahHarga', id, d.save.h);
+              const p = exactP(id.n, id.s);
               if (p) { p.h = Math.round(Number(res.h)) || d.save.h; p.u = res.u || new Date().toISOString(); }
-              d.t = 'Harga ' + d.save.n + ' disimpan ke daftar: ' + rp(d.save.h);
-              d.rev = { harga: d.save.n, h: d.save.old || 0 };
+              d.t = 'Harga ' + d.save.n + ' per ' + d.save.s + ' disimpan ke daftar: ' + rp(d.save.h);
+              d.rev = { harga: id, h: d.save.old || 0 };
             } catch (e) { d.t = 'Gagal menyimpan harga ' + d.save.n + ': ' + cleanErr(e); d.x = true; }
             delete d.save;
           } else {
@@ -1922,7 +1958,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
             try {
               applyData(await call('simpanBarang', { n: b.n, h: b.h, s: b.s, k: b.k, baru: true }));
               d.t = 'Ditambahkan ke daftar: ' + b.n + ', ' + (b.h ? rp(b.h) : 'belum ada harga') + ' per ' + b.s + (b.k ? ', kategori ' + b.k : '');
-              d.rev = { baru: b.n };
+              d.rev = { baru: { n: b.n, s: b.s } };
             } catch (e) { d.t = 'Gagal menambah ' + b.n + ' ke daftar: ' + cleanErr(e); d.x = true; }
             delete d.baru;
           }
@@ -1947,7 +1983,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
         if (d.rev.baru) applyData(await callPin('hapusBarang', d.rev.baru));
         else {
           const res = await call('ubahHarga', d.rev.harga, d.rev.h);
-          const p = PRICES.find((x) => norm(x.n) === norm(d.rev.harga));
+          const p = exactP(d.rev.harga.n, d.rev.harga.s);
           if (p) { p.h = d.rev.h; p.u = res.u || new Date().toISOString(); }
         }
         d.t += ' (dibatalkan)';
@@ -2073,8 +2109,9 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
   }
   function revFromNota(res) {
     return (res.baris || []).map((b) => {
-      const p = b.cocok ? PRICES.find((x) => norm(x.n) === norm(b.cocok)) : null;
       const nSat = String(b.satuan || '').toUpperCase(), isi = Math.round(num(b.isi)), beli = Math.round(num(b.harga));
+      // nama sama dengan satuan nota (mis. per DUS) dipilih dulu; kalau tidak ada, barang pertama bernama itu (harga dibagi isi)
+      const p = b.cocok ? findP(b.cocok, nSat) : null;
       const r = { type: p ? 'harga' : 'baru', p, beli, isi, name: p ? p.n : String(b.nama_baru || b.teks || '').trim().toUpperCase(),
         s: p ? p.s : (nSat || 'PCS'), k: p ? p.k : String(b.kategori || '').toUpperCase(), tag: p ? '' : 'BARU', on: false };
       r.perIsi = !!(p && isi > 1 && nSat && norm(nSat) !== norm(p.s));
@@ -2089,7 +2126,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
   function revFromMassal(m) {
     return m.ps.map((p) => {
       const v = Math.max(0, hargaMassal(p, m.cara, m.nilai));
-      return { type: 'harga', p, name: p.n, val: v || '', on: !!v && v !== p.h, sub: 'Sekarang ' + (p.h ? rp(p.h) : 'belum ada harga') + ' per ' + p.s + (v ? '' : ' · tidak bisa dihitung, isi sendiri') };
+      return { type: 'harga', p, name: label(p), val: v || '', on: !!v && v !== p.h, sub: 'Sekarang ' + (p.h ? rp(p.h) : 'belum ada harga') + ' per ' + p.s + (v ? '' : ' · tidak bisa dihitung, isi sendiri') };
     });
   }
   const RAPI = { nama: ['NAMA', 'n'], satuan: ['SATUAN', 's'], kategori: ['KATEGORI', 'k'] };
@@ -2166,11 +2203,11 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     const sel = REV.rows.filter((r) => r.on), list = [];
     if (!sel.length) { revMsg('Belum ada yang dipilih.', 'bad'); return; }
     if (REV.kind === 'rapikan') {
-      const per = new Map(), dels = sel.filter((r) => r.type === 'hapus'), gone = new Set(dels.map((r) => r.p.n));
-      const ed = (p) => { if (!per.has(p.n)) per.set(p.n, { o: p, c: { jenis: 'ubah', lama: p.n, n: p.n, h: p.h, s: p.s, k: p.k } }); return per.get(p.n).c; };
+      const per = new Map(), dels = sel.filter((r) => r.type === 'hapus'), gone = new Set(dels.map((r) => pKey(r.p)));
+      const ed = (p) => { const k = pKey(p); if (!per.has(k)) per.set(k, { o: p, c: { jenis: 'ubah', lama: p.n, lamaS: p.s, n: p.n, h: p.h, s: p.s, k: p.k } }); return per.get(k).c; };
       for (const r of sel) {
-        if (r.type === 'hapus') { if (r.p.h && !r.keep.h && !gone.has(r.keep.n)) ed(r.keep).h = r.p.h; continue; }
-        if (gone.has(r.p.n)) continue;
+        if (r.type === 'hapus') { if (r.p.h && !r.keep.h && !gone.has(pKey(r.keep))) ed(r.keep).h = r.p.h; continue; }
+        if (gone.has(pKey(r.p))) continue;
         const v = String(r.val || '').trim().replace(/\s+/g, ' ').toUpperCase();
         if (!v && r.field !== 'k') { revMsg('Isi ' + r.tag.toLowerCase() + ' baru untuk ' + r.p.n + '.', 'bad'); return; }
         ed(r.p)[r.field] = v;
@@ -2182,19 +2219,19 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
         if (c.k !== o.k) parts.push('kategori ' + (c.k || '(kosong)'));
         if (c.h !== o.h) parts.push('harga ' + rp(c.h));
         if (!parts.length) return;
-        list.push(Object.assign(c, { _t: o.n + ': ' + parts.join(', '), _rev: { jenis: 'ubah', lama: c.n, n: o.n, h: o.h, s: o.s, k: o.k } }));
+        list.push(Object.assign(c, { _t: o.n + ': ' + parts.join(', '), _rev: { jenis: 'ubah', lama: c.n, lamaS: c.s, n: o.n, h: o.h, s: o.s, k: o.k } }));
       });
-      dels.forEach((r) => list.push({ jenis: 'hapus', n: r.p.n, _t: 'Dihapus (dobel dari ' + r.keep.n + '): ' + r.p.n }));
+      dels.forEach((r) => list.push({ jenis: 'hapus', n: r.p.n, s: r.p.s, _t: 'Dihapus (dobel dari ' + r.keep.n + '): ' + r.p.n }));
     } else {
       for (const r of sel) {
         const h = Math.round(num(r.val));
         if (r.type === 'harga') {
           if (!h) { revMsg('Harga ' + r.p.n + ' masih kosong.', 'bad'); return; }
           if (h === r.p.h) continue;
-          list.push({ jenis: 'harga', n: r.p.n, h, _t: r.p.n + ': ' + (r.p.h ? rp(r.p.h) : 'belum ada') + ' → ' + rp(h), _rev: { jenis: 'harga', n: r.p.n, h: r.p.h } });
+          list.push({ jenis: 'harga', n: r.p.n, s: r.p.s, h, _t: label(r.p) + ': ' + (r.p.h ? rp(r.p.h) : 'belum ada') + ' → ' + rp(h), _rev: { jenis: 'harga', n: r.p.n, s: r.p.s, h: r.p.h } });
         } else {
           const n = r.name.replace(/\s+/g, ' ').toUpperCase();
-          list.push({ jenis: 'baru', n, h, s: r.s, k: r.k, _t: 'Barang baru: ' + n + ', ' + (h ? rp(h) : 'belum ada harga') + ' per ' + r.s, _rev: { jenis: 'hapus', n } });
+          list.push({ jenis: 'baru', n, h, s: r.s, k: r.k, _t: 'Barang baru: ' + n + ', ' + (h ? rp(h) : 'belum ada harga') + ' per ' + r.s, _rev: { jenis: 'hapus', n, s: r.s } });
         }
       }
     }
@@ -2204,7 +2241,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
       const d = await callPin('terapkanPerubahan', list.map(({ _t, _rev, ...c }) => c));
       const h = d.hasil || { ok: [], gagal: [] }, okSet = new Set(h.ok || []);
       applyData(d);
-      list.forEach((c, i) => { if (okSet.has(i) && c.jenis === 'harga') state.items.forEach((x) => { if (!x.pl && norm(x.name) === norm(c.n)) x.price = c.h; }); });
+      list.forEach((c, i) => { if (okSet.has(i) && c.jenis === 'harga') state.items.forEach((x) => { if (lineOf(x, c)) x.price = c.h; }); });
       renderRows(); renderAll();
       const parts = [];
       if (h.harga) parts.push(h.harga + ' harga diperbarui');
@@ -2224,7 +2261,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     m.saving = true; aiRender();
     try {
       applyData(await callPin('terapkanPerubahan', m.balik));
-      m.balik.forEach((c) => { if (c.jenis === 'harga') state.items.forEach((x) => { if (!x.pl && norm(x.name) === norm(c.n)) x.price = c.h; }); });
+      m.balik.forEach((c) => { if (c.jenis === 'harga') state.items.forEach((x) => { if (lineOf(x, c)) x.price = c.h; }); });
       renderRows(); renderAll();
       m.balik = null; m.unrev = true; toast('Perubahan dibatalkan');
     } catch (e) { toast('Gagal membatalkan: ' + cleanErr(e)); }
