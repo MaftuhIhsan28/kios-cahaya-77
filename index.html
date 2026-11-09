@@ -1134,6 +1134,11 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
           return res({ balasan: m.length ? m.map((r) => r.n + ': ' + (r.h ? 'Rp ' + r.h.toLocaleString('id-ID') : 'belum ada harga')).join(', ') : 'Barang itu tidak ada di daftar.', aksi: [],
             lihat: m.length <= 6 ? m.map((r) => ({ n: r.n, s: r.s })) : [] });
         }
+        const um = t.match(/^(.+?)\s+(?:(utang|bayar|lunas)\s*)?(\d*)$/), uo = um && uRingkas().find((o) => key(o.n) === um[1]);
+        if (uo && (um[3] || um[2] === 'lunas')) {
+          const by = um[2] === 'bayar' || um[2] === 'lunas';
+          return res({ balasan: by ? 'Pembayaran ' + uo.n + ' saya catat setelah PIN diisi.' : 'Utang ' + uo.n + ' saya catat.', aksi: [{ jenis: by ? 'bayar' : 'utang', nama: uo.n, harga: +um[3] || 0 }] });
+        }
         const hm = t.match(/^(?:harga\s+)?(.+?)\s+(\d+)\s*(?:ribu|rb)$/);
         if (hm && !find(hm[1]).length) return res({ balasan: 'Barang baru ' + hm[1].toUpperCase() + ' saya tambahkan ke daftar.', aksi: [{ jenis: 'baru', nama: hm[1].toUpperCase(), harga: +hm[2] * 1000, satuan: 'PCS', kategori: 'LAINNYA' }] });
         if (hm && find(hm[1]).length === 1 && find(hm[1])[0].h === +hm[2] * 1000) {
@@ -2034,7 +2039,8 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
       if (m.balik) btns += m.saving ? note('Membatalkan…') : '<button type="button" class="btn sm" data-unrev="' + i + '">Batalkan perubahan</button>';
       else if (m.unrev) btns += note('Sudah dibatalkan.');
       if (m.lihat && m.lihat.length && !m.undone && !m.saving) btns += '<button type="button" class="btn sm" data-lihat="' + i + '">Lihat barang</button>';
-      if (m.done && m.done.length && !m.balik && !m.unrev && !m.open) btns += '<button type="button" class="btn sm ghost" data-see="1">Lihat nota</button>';
+      if (m.lihatU && !m.undone && !m.saving) btns += '<button type="button" class="btn sm" data-lihatu="' + i + '">Lihat utang</button>';
+      if (m.done && m.done.length && !m.balik && !m.unrev && !m.open && !m.lihatU) btns += '<button type="button" class="btn sm ghost" data-see="1">Lihat nota</button>';
       const lis = m.done && m.done.length ? m.done.map((d) => '<li' + (d.x ? ' class="x"' : '') + '>' + esc(d.t) + '</li>').join('') : '';
       const done = lis || btns ? '<ul class="ai-done">' + lis + (btns ? '<div class="btns">' + btns + '</div>' : '') + '</ul>' : '';
       return '<div class="ai-msg bot">' + aiText(m.t) + done + '</div>';
@@ -2090,6 +2096,23 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
         }
         if (h) state.items.forEach((x) => { if (lineOf(x, { n, s }) && !num(x.price)) x.price = h; });
         done.push({ t: 'Barang baru: ' + n + ' (menyimpan…)', baru: { n, h, s, k } });
+      } else if (a.jenis === 'utang') { // catat utang (tanpa PIN); harga 0 = nota yang sedang dibuat
+        const n = uNama(nm);
+        let h = Math.round(num(a.harga)), ket = String(a.keterangan || '').trim(), dariNota = false;
+        if (!h) {
+          const c = calc();
+          if (state.utang) { done.push({ t: 'Nota ini sudah dicatat sebagai utang ' + state.utang.nama, x: true }); return; }
+          h = Math.round(c.pay > 0 ? c.total - c.pay : c.total);
+          if (!c.lines.length || h <= 0) { done.push({ t: 'Jumlah utang ' + n + ' belum jelas', x: true }); return; }
+          ket = c.lines.map((l) => nfq.format(l.qty) + ' ' + l.name).join(', ').slice(0, 300); dariNota = true;
+        }
+        done.push({ t: 'Utang ' + n + ': ' + rp(h) + ' (menyimpan…)', utang: { n, h, ket, dariNota } });
+      } else if (a.jenis === 'bayar') { // pembayaran utang: PIN kios diketik
+        const n = uNama(nm), o = UTANG.find((u) => norm(u.n) === norm(n));
+        const h = Math.round(num(a.harga)) || (o ? o.sisa : 0);
+        if (!o || o.sisa <= 0) { done.push({ t: n + ' tidak punya utang', x: true }); return; }
+        if (h > o.sisa) { done.push({ t: 'Pembayaran ' + rp(h) + ' lebih besar dari sisa utang ' + n + ' (' + rp(o.sisa) + ')', x: true }); return; }
+        done.push({ t: 'Bayar utang ' + o.n + ': ' + rp(h) + ' (menunggu PIN…)', bayar: { n: o.n, h }, tetap: 1 });
       } else if (a.jenis === 'massal') { // ubah harga banyak barang: diperiksa kasir dulu di layar tinjau
         const want = new Set((a.daftar || []).map(norm)); // nama yang punya beberapa satuan: semua satuannya ikut
         const ps = PRICES.filter((x) => want.has(norm(x.n)));
@@ -2127,9 +2150,10 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
       } else {
         const snap = JSON.parse(JSON.stringify(state.items));
         const done = aiApply((r && r.aksi) || []);
-        if (done.some((d) => !d.x)) AI_LOG.forEach((m) => { m.snap = null; }); // hanya perubahan terakhir yang bisa dibatalkan
-        AI_LOG.push({ r: 'ai', t: (r && r.balasan) || 'Baik.', done, snap: done.some((d) => !d.x) ? snap : null });
-        const msg = AI_LOG[AI_LOG.length - 1], saves = done.filter((d) => d.save || d.baru);
+        const bisaBatal = done.some((d) => !d.x && !d.tetap); // pembayaran utang tidak ikut Batalkan
+        if (bisaBatal) AI_LOG.forEach((m) => { m.snap = null; }); // hanya perubahan terakhir yang bisa dibatalkan
+        AI_LOG.push({ r: 'ai', t: (r && r.balasan) || 'Baik.', done, snap: bisaBatal ? snap : null });
+        const msg = AI_LOG[AI_LOG.length - 1], saves = done.filter((d) => d.save || d.baru || d.utang || d.bayar);
         // barang yang sudah ada di daftar dan disebut asisten (mis. "sudah ada", jawaban harga): bisa langsung dibuka
         if (r && Array.isArray(r.lihat) && r.lihat.length && !done.length) msg.lihat = r.lihat.map((b) => ({ n: b.n, s: b.s }));
         const mm = done.find((d) => d.massal);
@@ -2151,6 +2175,30 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
               d.rev = { harga: id, h: d.save.old || 0 };
             } catch (e) { d.t = 'Gagal menyimpan harga ' + d.save.n + ': ' + cleanErr(e); d.x = true; }
             delete d.save;
+          } else if (d.utang) {
+            const u = d.utang;
+            try {
+              const res = await call('catatUtang', { nama: u.n, jumlah: u.h, ket: u.ket, no: u.dariNota ? state.no : '' });
+              setUtang(res.utang);
+              const nm = res.nama || u.n;
+              if (u.dariNota) { state.utang = { nama: nm, jml: u.h, id: res.id || '' }; renderAll(); }
+              d.t = 'Utang ' + nm + ' dicatat: ' + rp(u.h) + (u.dariNota ? ' (nota ini, tercetak BELUM LUNAS)' : '');
+              d.rev = { utang: res.id, n: nm };
+              msg.lihatU = nm;
+            } catch (e) { d.t = 'Gagal mencatat utang ' + u.n + ': ' + cleanErr(e); d.x = true; }
+            delete d.utang;
+          } else if (d.bayar) {
+            const b = d.bayar;
+            try {
+              const res = await denganPin('Mencatat pembayaran utang ' + b.n + ' ' + rp(b.h) + '.', (pin) => call('bayarUtang', b.n, b.h, pin));
+              if (!res) { d.t = 'Pembayaran ' + b.n + ' belum dicatat (PIN tidak diisi)'; d.x = true; }
+              else {
+                setUtang(res.utang);
+                d.t = 'Pembayaran ' + b.n + ' ' + rp(b.h) + ' dicatat' + (res.sisa > 0 ? ', sisa ' + rp(res.sisa) : ', LUNAS');
+                msg.lihatU = b.n;
+              }
+            } catch (e) { d.t = 'Gagal mencatat pembayaran ' + b.n + ': ' + cleanErr(e); d.x = true; }
+            delete d.bayar;
           } else {
             const b = d.baru;
             try {
@@ -2181,7 +2229,12 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     for (const d of revs) {
       try {
         if (d.rev.baru) applyData(await callPin('hapusBarang', d.rev.baru));
-        else {
+        else if (d.rev.utang) {
+          const res = await hapusCatatan(d.rev.utang);
+          if (!res) throw new Error('butuh PIN kios');
+          setUtang(res.utang);
+          if (state.utang && state.utang.id === d.rev.utang) { state.utang = null; renderAll(); }
+        } else {
           const res = await call('ubahHarga', d.rev.harga, d.rev.h);
           const p = exactP(d.rev.harga.n, d.rev.harga.s);
           if (p) { p.h = d.rev.h; p.u = res.u || new Date().toISOString(); }
@@ -2208,6 +2261,8 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     const ur = e.target.closest('[data-unrev]'); if (ur) { const m = AI_LOG[+ur.dataset.unrev]; if (m && m.balik && !m.saving) revUndo(m); return; }
     const u = e.target.closest('[data-undo]');
     if (u) { const m = AI_LOG[+u.dataset.undo]; if (m && m.snap && !m.saving) aiUndo(m); return; }
+    const lu = e.target.closest('[data-lihatu]');
+    if (lu) { const m = AI_LOG[+lu.dataset.lihatu]; if (m && m.lihatU) { aiClose(); showView('utang'); openUtang(m.lihatU); } return; }
     const lb = e.target.closest('[data-lihat]');
     if (lb) { const m = AI_LOG[+lb.dataset.lihat]; if (m && m.lihat) lihatBarang(m.lihat); return; }
     if (e.target.closest('[data-see]')) { aiClose(); showView('kasir'); $('#rows').scrollIntoView({ block: 'center' }); }
