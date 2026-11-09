@@ -975,10 +975,15 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
         const t = key(pesan), find = (s) => rows.filter((r) => s.split(/\s+/).every((w) => key(r.n).includes(w)));
         if (/harga|berapa/.test(t)) {
           const q = t.replace(/harga|berapa|\?/g, ' ').trim().replace(/\s+/g, ' '), m = q ? find(q) : [];
-          return res({ balasan: m.length ? m.map((r) => r.n + ': ' + (r.h ? 'Rp ' + r.h.toLocaleString('id-ID') : 'belum ada harga')).join(', ') : 'Barang itu tidak ada di daftar.', aksi: [] });
+          return res({ balasan: m.length ? m.map((r) => r.n + ': ' + (r.h ? 'Rp ' + r.h.toLocaleString('id-ID') : 'belum ada harga')).join(', ') : 'Barang itu tidak ada di daftar.', aksi: [],
+            lihat: m.length <= 6 ? m.map((r) => ({ n: r.n, s: r.s })) : [] });
         }
         const hm = t.match(/^(?:harga\s+)?(.+?)\s+(\d+)\s*(?:ribu|rb)$/);
         if (hm && !find(hm[1]).length) return res({ balasan: 'Barang baru ' + hm[1].toUpperCase() + ' saya tambahkan ke daftar.', aksi: [{ jenis: 'baru', nama: hm[1].toUpperCase(), harga: +hm[2] * 1000, satuan: 'PCS', kategori: 'LAINNYA' }] });
+        if (hm && find(hm[1]).length === 1 && find(hm[1])[0].h === +hm[2] * 1000) {
+          const ada = find(hm[1])[0];
+          return res({ balasan: ada.n + ' sudah ada di daftar: Rp ' + ada.h.toLocaleString('id-ID') + ' per ' + ada.s + '. Harganya sama, jadi tidak ada yang diubah dan tidak saya masukkan ke nota.', aksi: [], lihat: [{ n: ada.n, s: ada.s }] });
+        }
         if (hm && find(hm[1]).length === 1) return res({ balasan: 'Harga ' + find(hm[1])[0].n + ' saya simpan.', aksi: [{ jenis: 'harga', nama: find(hm[1])[0].n, harga: +hm[2] * 1000 }] });
         const aksi = [], miss = [];
         t.split(/,|\bdan\b/).map((s) => s.trim()).filter(Boolean).forEach((s) => {
@@ -1966,6 +1971,8 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
         if (done.some((d) => !d.x)) AI_LOG.forEach((m) => { m.snap = null; }); // hanya perubahan terakhir yang bisa dibatalkan
         AI_LOG.push({ r: 'ai', t: (r && r.balasan) || 'Baik.', done, snap: done.some((d) => !d.x) ? snap : null });
         const msg = AI_LOG[AI_LOG.length - 1], saves = done.filter((d) => d.save || d.baru);
+        // barang yang sudah ada di daftar dan disebut asisten (mis. "sudah ada", jawaban harga): bisa langsung dibuka
+        if (r && Array.isArray(r.lihat) && r.lihat.length && !done.length) msg.lihat = r.lihat.map((b) => ({ n: b.n, s: b.s }));
         const mm = done.find((d) => d.massal);
         if (mm) {
           const rows = revFromMassal(mm.massal);
