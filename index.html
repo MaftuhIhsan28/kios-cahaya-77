@@ -139,6 +139,8 @@ button.tag { border: 0; cursor: pointer; }
 .tbl.selecting .c-act { display: none; }
 .tbl.selecting tbody tr { cursor: pointer; }
 .tbl tr.picked, .tbl tr.picked td { background: var(--accent-soft); }
+/* barang yang dibuka dari tombol "Lihat barang" di asisten: menyala sebentar */
+.tbl tr.sorot td { background: var(--accent-soft); box-shadow: inset 0 0 0 9999px rgba(255, 201, 40, .22); transition: box-shadow .8s ease; }
 .tbl input[type=checkbox] { width: 22px; height: 22px; padding: 0; margin: 0; accent-color: var(--accent); cursor: pointer; vertical-align: middle; }
 .bulkbar { position: sticky; top: calc(var(--tabs-h, 0px) + var(--dhead-h, 0px) + 6px); z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; margin: 0 0 10px; background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 8px; }
 .bulkbar .cnt { flex: 1 1 auto; font-weight: 700; }
@@ -1867,12 +1869,29 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
       else if (m.undone) btns += note(m.saving ? 'Membatalkan…' : 'Sudah dibatalkan.');
       if (m.balik) btns += m.saving ? note('Membatalkan…') : '<button type="button" class="btn sm" data-unrev="' + i + '">Batalkan perubahan</button>';
       else if (m.unrev) btns += note('Sudah dibatalkan.');
+      if (m.lihat && m.lihat.length && !m.undone && !m.saving) btns += '<button type="button" class="btn sm" data-lihat="' + i + '">Lihat barang</button>';
       if (m.done && m.done.length && !m.balik && !m.unrev && !m.open) btns += '<button type="button" class="btn sm ghost" data-see="1">Lihat nota</button>';
       const lis = m.done && m.done.length ? m.done.map((d) => '<li' + (d.x ? ' class="x"' : '') + '>' + esc(d.t) + '</li>').join('') : '';
       const done = lis || btns ? '<ul class="ai-done">' + lis + (btns ? '<div class="btns">' + btns + '</div>' : '') + '</ul>' : '';
       return '<div class="ai-msg bot">' + aiText(m.t) + done + '</div>';
     }).join('');
     log.scrollTop = log.scrollHeight;
+  }
+  // "Lihat barang": tutup asisten, buka Dashboard harga, cari barangnya, gulir ke sana dan nyalakan barisnya sebentar
+  function lihatBarang(list) {
+    const ps = list.map((b) => exactP(b.n, b.s) || findP(b.n)).filter((p, i, a) => p && a.indexOf(p) === i);
+    if (!ps.length) { toast('Barangnya tidak ada di daftar lagi.'); return; }
+    aiClose(); showView('dash');
+    if (selecting) setSelecting(false);
+    catFilter = ''; store.set('k77gs.cat', '');
+    const nama = [...new Set(ps.map((p) => p.n))];
+    $('#dq').value = nama.length === 1 ? nama[0] : '';
+    renderDash();
+    const rows = ps.map((p) => $('#dbody tr[data-i="' + PRICES.indexOf(p) + '"]')).filter(Boolean);
+    if (!rows.length) return;
+    rows[0].scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    rows.forEach((tr) => tr.classList.add('sorot'));
+    setTimeout(() => rows.forEach((tr) => tr.classList.remove('sorot')), 2500);
   }
   // jalankan aksi dari AI ke nota; hasilnya daftar baris ringkas untuk ditampilkan
   function aiApply(aksi) {
@@ -1962,6 +1981,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
               const p = exactP(id.n, id.s);
               if (p) { p.h = Math.round(Number(res.h)) || d.save.h; p.u = res.u || new Date().toISOString(); }
               d.t = 'Harga ' + d.save.n + ' per ' + d.save.s + ' disimpan ke daftar: ' + rp(d.save.h);
+              (msg.lihat = msg.lihat || []).push(id);
               d.rev = { harga: id, h: d.save.old || 0 };
             } catch (e) { d.t = 'Gagal menyimpan harga ' + d.save.n + ': ' + cleanErr(e); d.x = true; }
             delete d.save;
@@ -1971,6 +1991,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
               applyData(await call('simpanBarang', { n: b.n, h: b.h, s: b.s, k: b.k, baru: true }));
               d.t = 'Ditambahkan ke daftar: ' + b.n + ', ' + (b.h ? rp(b.h) : 'belum ada harga') + ' per ' + b.s + (b.k ? ', kategori ' + b.k : '');
               d.rev = { baru: { n: b.n, s: b.s } };
+              (msg.lihat = msg.lihat || []).push({ n: b.n, s: b.s });
             } catch (e) { d.t = 'Gagal menambah ' + b.n + ' ke daftar: ' + cleanErr(e); d.x = true; }
             delete d.baru;
           }
@@ -2021,6 +2042,8 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     const ur = e.target.closest('[data-unrev]'); if (ur) { const m = AI_LOG[+ur.dataset.unrev]; if (m && m.balik && !m.saving) revUndo(m); return; }
     const u = e.target.closest('[data-undo]');
     if (u) { const m = AI_LOG[+u.dataset.undo]; if (m && m.snap && !m.saving) aiUndo(m); return; }
+    const lb = e.target.closest('[data-lihat]');
+    if (lb) { const m = AI_LOG[+lb.dataset.lihat]; if (m && m.lihat) lihatBarang(m.lihat); return; }
     if (e.target.closest('[data-see]')) { aiClose(); showView('kasir'); $('#rows').scrollIntoView({ block: 'center' }); }
   });
   $('#aiKeySave').addEventListener('click', async () => {
