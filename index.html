@@ -819,8 +819,16 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
   const API_URL = 'https://script.google.com/macros/s/AKfycbwZdlcFlGienOrLp0b-bIvo2EScjySfGEV15pp_hMlvNM_VasSrpVs0C-vtqoX1wnpP6A/exec';
   const API = !GAS && (/\.github\.io$/.test(location.hostname) || /[?&]api=1/.test(location.search));
   const LIVE = GAS || API; // false = mode contoh
+  let aiAbort = null;
+  // Asisten: server Gemini gratis kadang macet beberapa menit. Setelah 75 detik kasir tidak ditahan lagi.
+  const AI_BATAS = 75000;
+  const batasWaktu = (p, ms, pesan) => {
+    let t; const habis = new Promise((ok, no) => { t = setTimeout(() => { if (aiAbort) try { aiAbort.abort(); } catch (e) {} no(new Error(pesan)); }, ms); });
+    return Promise.race([p, habis]).finally(() => clearTimeout(t));
+  };
   async function api(fn, args) {
     const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), fn === 'ambilData' ? 25000 : 150000);
+    if (fn === 'tanyaAsisten') aiAbort = ctl; // asisten bisa dihentikan kalau terlalu lama
     let r;
     try {
       // badan teks biasa: tidak memicu pemeriksaan CORS tambahan, Apps Script membacanya dari postData
@@ -829,7 +837,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
       throw new Error(e && e.name === 'AbortError' ? 'Server terlalu lama menjawab. Coba lagi.' : 'Failed to fetch');
     } finally { clearTimeout(t); }
     let j;
-    try { j = await r.json(); } catch (e) { throw new Error('Jawaban server tidak terbaca (HTTP ' + r.status + '). Coba lagi.'); }
+    try { j = await r.json(); } catch (e) { throw new Error(e && e.name === 'AbortError' ? 'Server terlalu lama menjawab. Coba lagi.' : 'Jawaban server tidak terbaca (HTTP ' + r.status + '). Coba lagi.'); }
     if (!j.ok) throw new Error(j.error || 'Gagal.');
     return j.r;
   }
@@ -843,9 +851,11 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     if (offline()) return Promise.reject(new Error(fn === 'ambilData' ? 'tidak ada internet'
       : fn === 'tanyaAsisten' ? 'Asisten butuh internet. Coba lagi setelah sinyal kembali.'
       : 'Tidak ada internet. Belum tersimpan, coba lagi setelah sinyal kembali.'));
-    if (API) return api(fn, args);
-    if (!GAS) return DEMO[fn](...args);
-    return new Promise((res, rej) => google.script.run.withSuccessHandler(res).withFailureHandler(rej)[fn](...args));
+    let p;
+    if (API) p = api(fn, args);
+    else if (!GAS) p = DEMO[fn](...args);
+    else p = new Promise((res, rej) => google.script.run.withSuccessHandler(res).withFailureHandler(rej)[fn](...args));
+    return fn === 'tanyaAsisten' ? batasWaktu(p, AI_BATAS, 'Asisten belum menjawab setelah 1 menit (server AI Google sedang lambat). Kirim ulang pesannya.') : p;
   }
   /* Mode contoh: hanya dipakai kalau file ini dibuka di luar Apps Script (untuk mencoba tampilan). */
   const DEMO = (() => {
@@ -1920,7 +1930,9 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     aiBusy = true; $('#aiSend').disabled = true;
     const hist = AI_LOG.filter((m) => m.r === 'me' || m.r === 'ai').slice(-12)
       .map((m) => ({ r: m.r, t: m.t + (m.done && m.done.length ? '\n[Nota: ' + m.done.map((d) => d.t).join('; ') + ']' : '') }));
-    AI_LOG.push({ r: 'me', t: text || 'Foto barang', img: gambar ? gambar.thumb : '' }, { r: 'wait', t: gambar ? 'Melihat foto…' : '' }); aiRender();
+    const tunggu = { r: 'wait', t: gambar ? 'Melihat foto…' : '' };
+    AI_LOG.push({ r: 'me', t: text || 'Foto barang', img: gambar ? gambar.thumb : '' }, tunggu); aiRender();
+    const lambat = setTimeout(() => { tunggu.t = 'Masih menunggu jawaban… server AI sedang lambat.'; aiRender(); }, 20000);
     $('#aiIn').value = ''; aiGrow();
     const nota = state.items.filter((i) => i.name.trim()).map((i) => ({ n: i.name.trim(), q: qtyOf(i), s: String(i.unit || '').trim(), h: num(i.price) }));
     try {
@@ -1969,6 +1981,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     } catch (e) {
       AI_LOG.pop(); AI_LOG.push({ r: 'err', t: 'Gagal: ' + cleanErr(e) });
     } finally {
+      clearTimeout(lambat); aiAbort = null;
       aiBusy = false; $('#aiSend').disabled = false; aiRender();
     }
   }
