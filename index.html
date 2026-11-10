@@ -214,7 +214,7 @@ details[open] summary { margin-bottom: 10px; }
 .nota .bigl { font-size: 1.5em; font-weight: 700; }
 .nota .tall { display: inline-block; transform: scaleY(1.7); margin: .45em 0; }
 .nota .totrow { position: relative; z-index: 0; }
-.nota .stampbox { position: absolute; right: -1mm; top: 50%; transform: translateY(-50%); z-index: -1; line-height: 0; opacity: .38; pointer-events: none; }
+.nota .stampbox { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: -1; line-height: 0; opacity: .38; pointer-events: none; }
 .nota .stampbox img { width: 24mm; height: 24mm; }
 .nota.p80 .stampbox img, .nota.pA5 .stampbox img { width: 30mm; height: 30mm; }
 
@@ -2700,12 +2700,14 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     const ctx = cv.getContext('2d');
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, width, h);
     ctx.fillStyle = ctx.strokeStyle = '#000'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round'; ctx.lineWidth = 0.7;
+    let scx = width / 2; // titik tengah stempel: di tengah celah antara "TOTAL" dan angkanya
     lines.forEach((l, i) => {
       const ym = top + pos[i].y + pos[i].h / 2;
       if (l.tr) {
         ctx.font = tf();
         ctx.textAlign = 'left'; ctx.fillText(l.tl, 1, ym); ctx.strokeText(l.tl, 1, ym);
         ctx.textAlign = 'right'; ctx.fillText(l.tr, width - 2, ym); ctx.strokeText(l.tr, width - 2, ym);
+        scx = (1 + ctx.measureText(l.tl).width + width - 2 - ctx.measureText(l.tr).width) / 2;
         return;
       }
       ctx.font = '700 ' + fs + 'px ' + CANVAS_FONT; ctx.textAlign = 'center';
@@ -2716,7 +2718,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
         ctx.restore();
       });
     });
-    stampBehind(ctx, width, h, width - R - 4, top + totY, R);
+    stampBehind(ctx, width, h, Math.min(width - R - 2, Math.max(R + 2, scx)), top + totY, R);
     const px = ctx.getImageData(0, 0, width, h).data;
     b.push(0x1b, 0x61, 0, 0x1b, 0x45, 0, 0x1d, 0x76, 0x30, 0x00, bw & 0xff, bw >> 8, h & 0xff, h >> 8);
     for (let yy = 0; yy < h; yy++) for (let x = 0; x < bw; x++) {
@@ -2834,6 +2836,8 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     if (settings.stamp && calc().lines.length) {
       const u = stampURL();
       if (stampImg.getAttribute('src') !== u) stampImg.src = u;
+      const tl = receiptLines(W).find((l) => l.tr);
+      if (tl) stampBox.style.left = ((tl.tl.length + W - tl.tr.length) / 2) + 'ch';
       ($('#nota .totrow') || $('#nota')).append(stampBox); // di belakang TOTAL; elemen gambar yang sama dipakai ulang
     }
   }
@@ -2953,7 +2957,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     const ctx = cv.getContext('2d');
     ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, width, height);
     ctx.fillStyle = '#000000'; ctx.textBaseline = 'middle';
-    let y = 0;
+    let y = 0, scx = width / 2;
     ops.forEach((o) => {
       const ym = y + o.h / 2;
       if (o.rule) {
@@ -2967,12 +2971,13 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
         ctx.fillText(o.s, o.ctr ? width / 2 : x0, ym, inner - (o.ind || 0));
       } else if (o.l != null) {
         const rw = tw(o.r, o.fr), x0 = mx + (o.ind || 0);
+        if (o.tot) scx = (x0 + tw(o.l, o.fl) + width - mx - rw) / 2;
         ctx.font = o.fr; ctx.textAlign = 'right'; ctx.fillText(o.r, width - mx, ym, inner);
         ctx.font = o.fl; ctx.textAlign = 'left'; ctx.fillText(o.l, x0, ym, Math.max(inner * .3, inner - (o.ind || 0) - rw - fs * .6));
       }
       y += o.h;
     });
-    if (stampR) stampBehind(ctx, width, height, width - mx - stampR, totY, stampR);
+    if (stampR) stampBehind(ctx, width, height, Math.min(width - stampR - 2, Math.max(stampR + 2, scx)), totY, stampR);
     const img = ctx.getImageData(0, 0, width, height), px = img.data;
     for (let i = 0; i < px.length; i += 4) {
       const v = (px[i] * 299 + px[i + 1] * 587 + px[i + 2] * 114) / 1000 < 150 ? 0 : 255;
@@ -3574,7 +3579,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
    * perbarui.py mengisi VERSI_SITUS dan menulis versi.txt dengan kode yang sama. GitHub menyimpan halaman
    * di HP sampai 10 menit, jadi halaman yang terbuka memeriksa versi.txt (tanpa cache) saat dibuka kembali
    * dan tiap 5 menit. Muat ulang memakai alamat ?v=<kode> supaya HP tidak mengambil salinan lama. */
-  const VERSI_SITUS = '77e63361330c';
+  const VERSI_SITUS = '4a101070832e';
   let versiCek = 0, versiBaru = '';
   async function cekVersi() {
     if (!VERSI_SITUS || Date.now() - versiCek < 60000) return;
