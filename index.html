@@ -485,6 +485,31 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
   width: max-content; max-width: calc(100vw - 24px); padding: 8px 8px 8px 14px; border-radius: 12px; background: var(--accent); color: var(--on-accent);
   font-weight: 600; font-size: 14px; box-shadow: 0 6px 20px rgba(0, 0, 0, .3); }
 .verbar .btn { background: var(--on-accent); color: var(--accent); border-color: var(--on-accent); flex: none; }
+/* label kode harga */
+.sheet.lb { max-width: 560px; }
+.lb-key { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin-bottom: 12px; }
+.lb-key summary { cursor: pointer; font-weight: 600; }
+.lb-key .f { margin-top: 8px; }
+.lb-key.kosong { border-color: var(--danger); }
+.lb-res { display: grid; gap: 4px; max-height: 210px; overflow-y: auto; margin: 6px 0 8px; }
+.lb-res:empty { display: none; }
+.lb-res button { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; font-size: 14px; cursor: pointer; }
+.lb-res button span:last-child { color: var(--muted); white-space: nowrap; }
+.lb-man { display: grid; grid-template-columns: 1fr 120px auto; gap: 6px; margin-bottom: 12px; }
+@media (max-width: 460px) { .lb-man { grid-template-columns: 1fr 1fr; } .lb-man .btn { grid-column: 1 / -1; } }
+.lb-h { margin: 4px 0 6px; font-size: 15px; }
+.lb-list { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 6px; }
+.lb-list li { display: grid; grid-template-columns: 1fr 96px 54px auto; gap: 6px; align-items: center; padding: 6px 8px; border: 1px solid var(--line); border-radius: 10px; }
+.lb-list .nm { font-size: 14px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
+.lb-list .kd { display: block; font: 800 15px var(--mono); color: var(--accent); letter-spacing: .08em; }
+.lb-list input { padding: 6px 8px; font-size: 14px; }
+.lb-list .x { min-height: 36px; padding: 4px 10px; }
+.lb-list .none { display: block; color: var(--muted); font-size: 14px; border: 0; padding: 4px 0; }
+@media (max-width: 460px) { .lb-list li { grid-template-columns: 1fr 84px 48px auto; } }
+.lb-opt { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-bottom: 10px; }
+.lb-opt select { width: auto; }
+#lbPrev:empty { display: none; }
 
 @media print {
   body { background: #fff; }
@@ -523,6 +548,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
         <h2>Daftar harga</h2>
         <div class="head-btns">
           <button type="button" class="btn sm primary" id="newItemBtn">+ Tambah barang</button>
+          <button type="button" class="btn sm" id="lbBtn">Label kode harga</button>
           <button type="button" class="btn sm" id="selModeBtn" aria-pressed="false">Pilih untuk hapus</button>
         </div>
       </div>
@@ -916,6 +942,43 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
 </div>
 
 <!-- gambar nota -->
+<!-- label kode harga untuk rak: harga ditulis dengan huruf sandi (kunci disimpan di perangkat ini saja) -->
+<div class="overlay" id="lbDlg" hidden>
+  <div class="sheet lb" role="dialog" aria-modal="true" aria-labelledby="lbTitle">
+    <h3 id="lbTitle">Label kode harga</h3>
+    <details class="lb-key" id="lbKeyBox">
+      <summary>Kunci kode: <span id="lbKeySum"></span></summary>
+      <label class="f full">10 huruf berurutan untuk angka 1 2 3 4 5 6 7 8 9 0
+        <input id="lbKey" maxlength="10" autocomplete="off" autocapitalize="characters" spellcheck="false" style="text-transform:uppercase;letter-spacing:.25em">
+      </label>
+      <p class="hint" id="lbKeyMap"></p>
+    </details>
+    <label class="f full">Pilih barang
+      <input id="lbQ" type="search" autocomplete="off" placeholder="Ketik nama barang…">
+    </label>
+    <div class="lb-res" id="lbRes"></div>
+    <div class="lb-man">
+      <input id="lbManN" autocomplete="off" maxlength="60" placeholder="Barang lain (nama)" aria-label="Nama barang lain">
+      <input id="lbManH" type="number" inputmode="numeric" min="0" step="100" placeholder="Harga Rp" aria-label="Harga barang lain">
+      <button type="button" class="btn sm" id="lbManAdd">+ Tambah</button>
+    </div>
+    <h4 class="lb-h">Akan dicetak: <span id="lbCnt">0</span> label</h4>
+    <p class="hint" style="margin:0 0 6px">Kotak kanan: harga (boleh diubah) dan jumlah label.</p>
+    <ul class="lb-list" id="lbList"></ul>
+    <div class="lb-opt">
+      <label class="chk"><input type="checkbox" id="lbNama"> Tulis nama barang di bawah kode</label>
+      <select id="lbUk" aria-label="Ukuran label"><option value="1">Besar, 1 per baris</option><option value="2">Kecil, 2 per baris</option></select>
+    </div>
+    <div class="imgbox" id="lbPrev"></div>
+    <p class="hint msg" id="lbMsg" role="status" aria-live="polite"></p>
+    <div class="actions" style="margin-top:6px">
+      <button type="button" class="btn primary" id="lbPrint">Cetak label</button>
+      <button type="button" class="btn ghost" id="lbClear" style="flex:none">Kosongkan</button>
+      <button type="button" class="btn ghost" id="lbClose" style="flex:none">Tutup</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="imgDlg" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="imgTitle">
     <h3 id="imgTitle">Gambar nota</h3>
@@ -3127,43 +3190,44 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     }
   }
   const btTimeout = (p, ms) => Promise.race([p, new Promise((ok, no) => setTimeout(() => no(new Error('waktu')), ms))]);
-  async function btCetak() {
-    const bytes = escpos(); // dihitung sekarang juga: cetak pulsa langsung menukar isi nota hanya sesaat
+  async function btCetak(isi, apa, lapor) {
+    const bytes = isi || escpos(); // dihitung sekarang juga: cetak pulsa langsung menukar isi nota hanya sesaat
+    apa = apa || 'nota'; lapor = lapor || say;
     if (btSibuk) return;
     btSibuk = true;
-    const tombol = [$('#printBtn'), $('#pbPrint')]; tombol.forEach((b) => { b.disabled = true; });
+    const tombol = [$('#printBtn'), $('#pbPrint'), $('#lbPrint')]; tombol.forEach((b) => { b.disabled = true; });
     try {
       if (!btCh || !btDev.gatt.connected) {
         btCh = null;
         if (btDev) { // printer sudah dipilih tadi: sambung ulang tanpa bertanya
-          say('Menyambung ulang ke ' + (btDev.name || 'printer') + '…');
+          lapor('Menyambung ulang ke ' + (btDev.name || 'printer') + '…');
           try { btCh = await btTimeout(btFindChar(btDev), 10000); } catch (e) { btCh = null; }
         }
         if (!btCh && btIngat && navigator.bluetooth.getDevices) { // browser yang mengingat izin printer
           btIngat = false;
           let d = null;
           try { d = (await navigator.bluetooth.getDevices()).find((x) => String(x.name || '').toUpperCase().indexOf(BT_NAMA) === 0); } catch (e) { d = null; }
-          if (d) { say('Menyambung ke ' + d.name + '…'); try { btCh = await btTimeout(btFindChar(d), 4000); btDev = d; } catch (e) { btCh = null; } }
+          if (d) { lapor('Menyambung ke ' + d.name + '…'); try { btCh = await btTimeout(btFindChar(d), 4000); btDev = d; } catch (e) { btCh = null; } }
         }
         if (!btCh) {
           const dev = await navigator.bluetooth.requestDevice(btSemua ? { acceptAllDevices: true, optionalServices: BT_SVC }
             : { filters: [{ namePrefix: BT_NAMA }], optionalServices: BT_SVC });
-          say('Menyambung ke ' + (dev.name || 'printer') + '…');
+          lapor('Menyambung ke ' + (dev.name || 'printer') + '…');
           btCh = await btFindChar(dev); btDev = dev;
         }
       }
-      say('Mengirim nota ke ' + (btDev.name || 'printer') + '…');
+      lapor('Mengirim ' + apa + ' ke ' + (btDev.name || 'printer') + '…');
       await btSend(btCh, bytes);
-      say('Nota tercetak di ' + (btDev.name || 'printer') + '.');
+      lapor(apa[0].toUpperCase() + apa.slice(1) + ' tercetak di ' + (btDev.name || 'printer') + '.');
     } catch (e) {
       btCh = null;
       const n = e && e.name, m = (e && e.message) || String(e);
-      if (m === 'nochar') say('Printer tersambung, tapi tidak menerima data dari browser. Pakai "Gambar nota" lalu Bagikan ke aplikasi printer.', true);
-      else if (n === 'NotFoundError' && !btSemua) { btSemua = true; say('Printer ' + BT_NAMA + ' tidak dipilih atau tidak ditemukan. Pastikan printer menyala, lalu tekan Cetak lagi untuk memilih dari semua perangkat.', true); }
-      else if (n === 'NotFoundError') say('Tidak ada printer yang dipilih. Pastikan printer menyala, lalu coba lagi.', true);
-      else if (n === 'SecurityError') say('Tekan Cetak sekali lagi untuk memilih printer.', true);
-      else if (n === 'NotAllowedError') say('Bluetooth tidak diizinkan. Nyalakan Bluetooth tablet dan izinkan browser memakai Perangkat sekitar, lalu coba lagi.', true);
-      else say('Gagal mencetak: ' + m + '. Matikan-nyalakan printer, lalu tekan Cetak lagi.', true);
+      if (m === 'nochar') lapor('Printer tersambung, tapi tidak menerima data dari browser. Pakai "Gambar nota" lalu Bagikan ke aplikasi printer.', true);
+      else if (n === 'NotFoundError' && !btSemua) { btSemua = true; lapor('Printer ' + BT_NAMA + ' tidak dipilih atau tidak ditemukan. Pastikan printer menyala, lalu tekan Cetak lagi untuk memilih dari semua perangkat.', true); }
+      else if (n === 'NotFoundError') lapor('Tidak ada printer yang dipilih. Pastikan printer menyala, lalu coba lagi.', true);
+      else if (n === 'SecurityError') lapor('Tekan Cetak sekali lagi untuk memilih printer.', true);
+      else if (n === 'NotAllowedError') lapor('Bluetooth tidak diizinkan. Nyalakan Bluetooth tablet dan izinkan browser memakai Perangkat sekitar, lalu coba lagi.', true);
+      else lapor('Gagal mencetak: ' + m + '. Matikan-nyalakan printer, lalu tekan Cetak lagi.', true);
     } finally { btSibuk = false; tombol.forEach((b) => { b.disabled = false; }); }
   }
   $('#printBtn').addEventListener('click', () => {
@@ -3561,7 +3625,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
    * perbarui.py mengisi VERSI_SITUS dan menulis versi.txt dengan kode yang sama. GitHub menyimpan halaman
    * di HP sampai 10 menit, jadi halaman yang terbuka memeriksa versi.txt (tanpa cache) saat dibuka kembali
    * dan tiap 5 menit. Muat ulang memakai alamat ?v=<kode> supaya HP tidak mengambil salinan lama. */
-  const VERSI_SITUS = '23f72f44279d';
+  const VERSI_SITUS = '782985b72f38';
   let versiCek = 0, versiBaru = '';
   async function cekVersi() {
     if (!VERSI_SITUS || Date.now() - versiCek < 60000) return;
@@ -3580,6 +3644,205 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') cekVersi(); });
   setInterval(cekVersi, 5 * 60000);
   setTimeout(cekVersi, 3000);
+
+  /* ================= label kode harga ================= */
+  // harga (dalam ribuan) ditulis dengan huruf: kunci 10 huruf untuk angka 1..9,0 (huruf ke-1 = 1 ... huruf ke-10 = 0); ribuan dulu, sisanya setelah koma
+  // kunci hanya disimpan di perangkat ini (tidak ditulis di kode halaman, karena situsnya bisa dibuka siapa saja)
+  let lbKunci = String(store.get('k77gs.kodekunci', '') || '');
+  let LB = store.get('k77gs.label', []); // { n, h, q }
+  const lbSimpan = () => store.set('k77gs.label', LB);
+  const kunciOk = (k) => /^[A-Z]{10}$/.test(k) && new Set(k).size === 10;
+  function kodeHarga(h) {
+    h = Math.round(Number(h) || 0);
+    if (!kunciOk(lbKunci) || h <= 0) return '';
+    const d = (x) => lbKunci[(+x + 9) % 10]; // angka 1 = huruf pertama, 0 = huruf terakhir
+    const ribu = Math.floor(h / 1000), sisa = String(h % 1000).padStart(3, '0').replace(/0+$/, '');
+    return [...String(ribu)].map(d).join('') + (sisa ? ',' + [...sisa].map(d).join('') : '');
+  }
+  function lbKunciUI() {
+    const ok = kunciOk(lbKunci);
+    $('#lbKeySum').textContent = ok ? lbKunci : 'belum diisi';
+    $('#lbKeyBox').classList.toggle('kosong', !ok);
+    if (!ok) $('#lbKeyBox').open = true;
+    $('#lbKeyMap').textContent = ok ? [...lbKunci].map((c, i) => c + '=' + ((i + 1) % 10)).join('  ') + '. Contoh: 18.000 = ' + kodeHarga(18000) + ', 2.500 = ' + kodeHarga(2500) + '.'
+      : 'Isi 10 huruf berbeda. Huruf pertama = 1, huruf ke-10 = 0.';
+  }
+  $('#lbKey').addEventListener('input', () => {
+    const k = $('#lbKey').value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 10);
+    if (kunciOk(k)) { lbKunci = k; store.set('k77gs.kodekunci', k); lbKunciUI(); lbRender(); }
+    else { $('#lbKeyMap').textContent = k.length < 10 ? 'Kurang ' + (10 - k.length) + ' huruf.' : 'Ada huruf yang dipakai dua kali.'; }
+  });
+
+  // gambar label hitam-putih selebar kepala printer; n = 1 atau 2 label per baris
+  function labelCanvas() {
+    const width = cols() === 32 ? 384 : 576, per = +$('#lbUk').value || 1, cw = width / per, pakaiNama = $('#lbNama').checked;
+    const FONT_KODE = '"Roboto", "Arial Black", Arial, "Helvetica Neue", sans-serif', FONT_NAMA = CANVAS_FONT;
+    const m = document.createElement('canvas').getContext('2d');
+    const items = [];
+    LB.forEach((x) => { const k = kodeHarga(x.h); if (k) for (let i = 0; i < Math.max(1, Math.min(50, x.q || 1)); i++) items.push({ k, n: x.n }); });
+    if (!items.length) return null;
+    const maxK = per === 1 ? 96 : 64, nf = per === 1 ? 22 : 18, pad = per === 1 ? 14 : 10;
+    const bungkus = (t) => {
+      m.font = '700 ' + nf + 'px ' + FONT_NAMA;
+      const out = []; let line = '';
+      String(t || '').toUpperCase().split(/\s+/).filter(Boolean).forEach((w) => {
+        const c = line ? line + ' ' + w : w;
+        if (m.measureText(c).width <= cw - 16) line = c; else { if (line) out.push(line); line = w; }
+      });
+      if (line) out.push(line);
+      if (out.length > 2) { out.length = 2; out[1] = out[1].replace(/.?$/, '…'); }
+      return out.map((l) => { while (l.length > 1 && m.measureText(l).width > cw - 16) l = l.slice(0, -2) + '…'; return l; });
+    };
+    const sel = items.map((it) => {
+      let f = maxK; m.font = '900 ' + f + 'px ' + FONT_KODE;
+      const w = m.measureText(it.k).width; if (w > cw - 20) f = Math.floor(f * (cw - 20) / w);
+      const nama = pakaiNama && it.n ? bungkus(it.n) : [];
+      return { k: it.k, f, nama, h: pad * 2 + Math.round(maxK * 0.82) + (nama.length ? 8 + nama.length * Math.round(nf * 1.25) : 0) };
+    });
+    const baris = []; for (let i = 0; i < sel.length; i += per) baris.push(sel.slice(i, i + per));
+    const tinggi = baris.map((r) => Math.max(...r.map((c) => c.h)));
+    const H = tinggi.reduce((a, h) => a + h, 0) + 2;
+    const cv = document.createElement('canvas'); cv.width = width; cv.height = H;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, width, H);
+    ctx.fillStyle = ctx.strokeStyle = '#000'; ctx.textAlign = 'center';
+    const putus = (x1, y1, x2, y2) => { ctx.save(); ctx.lineWidth = 2; ctx.setLineDash([8, 6]); ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore(); };
+    let y = 0;
+    baris.forEach((r, bi) => {
+      const rh = tinggi[bi];
+      r.forEach((c, ci) => {
+        const cx = cw * ci + cw / 2, isi = Math.round(maxK * 0.82) + (c.nama.length ? 8 + c.nama.length * Math.round(nf * 1.25) : 0);
+        let yy = y + (rh - isi) / 2;
+        ctx.font = '900 ' + c.f + 'px ' + FONT_KODE; ctx.textBaseline = 'middle';
+        ctx.lineWidth = 1.2; ctx.lineJoin = 'round';
+        ctx.fillText(c.k, cx, yy + Math.round(maxK * 0.41)); ctx.strokeText(c.k, cx, yy + Math.round(maxK * 0.41));
+        yy += Math.round(maxK * 0.82) + 8;
+        ctx.font = '700 ' + nf + 'px ' + FONT_NAMA;
+        c.nama.forEach((l) => { ctx.fillText(l, cx, yy + Math.round(nf * 0.62)); yy += Math.round(nf * 1.25); });
+        if (ci > 0) putus(cw * ci, y + 4, cw * ci, y + rh - 4);
+      });
+      y += rh;
+      putus(0, y, width, y); // garis potong
+    });
+    const img = ctx.getImageData(0, 0, width, H), px = img.data;
+    for (let i = 0; i < px.length; i += 4) { const v = px[i] < 150 ? 0 : 255; px[i] = px[i + 1] = px[i + 2] = v; px[i + 3] = 255; }
+    ctx.putImageData(img, 0, 0);
+    return cv;
+  }
+  function labelBytes(cv) {
+    const width = cv.width, bw = width / 8, px = cv.getContext('2d').getImageData(0, 0, width, cv.height).data, b = [0x1b, 0x40];
+    // dikirim per potongan 200 baris: printer kecil tidak suka satu gambar raster yang sangat panjang
+    for (let y0 = 0; y0 < cv.height; y0 += 200) {
+      const h = Math.min(200, cv.height - y0);
+      b.push(0x1d, 0x76, 0x30, 0x00, bw & 0xff, bw >> 8, h & 0xff, h >> 8);
+      for (let y = y0; y < y0 + h; y++) for (let x = 0; x < bw; x++) {
+        let v = 0; for (let k = 0; k < 8; k++) { if (px[(y * width + x * 8 + k) * 4] < 128) v |= 0x80 >> k; }
+        b.push(v);
+      }
+    }
+    b.push(0x0a, 0x0a, 0x0a, 0x0a);
+    return new Uint8Array(b);
+  }
+  const lbMsg = (t, bad) => { $('#lbMsg').textContent = t || ''; $('#lbMsg').style.color = bad ? 'var(--danger)' : ''; };
+  let lbPrevT = 0;
+  function lbRender() {
+    const n = LB.reduce((a, x) => a + (kodeHarga(x.h) ? Math.max(1, x.q || 1) : 0), 0);
+    $('#lbCnt').textContent = n;
+    $('#lbList').innerHTML = LB.length ? LB.map((x, i) => {
+      const k = kodeHarga(x.h);
+      return '<li data-i="' + i + '"><span class="nm">' + esc(x.n || '(tanpa nama)') + '<span class="kd">' + (k ? esc(k) : (kunciOk(lbKunci) ? 'isi harga' : 'kunci belum diisi')) + '</span></span>' +
+        '<input type="number" inputmode="numeric" min="0" step="100" data-h value="' + (x.h || '') + '" aria-label="Harga ' + esc(x.n) + '">' +
+        '<input type="number" inputmode="numeric" min="1" max="50" data-q value="' + (x.q || 1) + '" aria-label="Jumlah label ' + esc(x.n) + '">' +
+        '<button type="button" class="btn ghost x" data-x aria-label="Hapus ' + esc(x.n) + '">×</button></li>';
+    }).join('') : '<li class="none">Belum ada. Cari barang di atas atau isi barang lain.</li>';
+    lbPreview();
+  }
+  function lbPreview() {
+    clearTimeout(lbPrevT);
+    lbPrevT = setTimeout(() => {
+      const cv = labelCanvas();
+      $('#lbPrev').innerHTML = '';
+      if (cv) { const im = new Image(); im.alt = 'Pratinjau label'; im.src = cv.toDataURL('image/png'); im.style.width = (cv.width / 8) + 'mm'; $('#lbPrev').append(im); }
+    }, 150);
+  }
+  function lbCari() {
+    const q = norm($('#lbQ').value);
+    if (!q) { $('#lbRes').innerHTML = ''; return; }
+    const list = PRICES.filter((x) => norm(x.n).includes(q)).slice(0, 30);
+    $('#lbRes').innerHTML = list.length ? list.map((x) => '<button type="button" data-p="' + PRICES.indexOf(x) + '"><span>' + esc(label(x)) + '</span><span>' +
+      (x.h > 0 ? rp(x.h) + (kodeHarga(x.h) ? ' · ' + esc(kodeHarga(x.h)) : '') : 'belum ada harga') + '</span></button>').join('')
+      : '<p class="hint" style="margin:0">Tidak ada di daftar harga. Isi di kolom "Barang lain" di bawah.</p>';
+  }
+  function lbTambah(n, h) {
+    n = String(n || '').trim(); h = Math.round(Number(h) || 0);
+    const ada = LB.find((x) => norm(x.n) === norm(n) && x.h === h && n);
+    if (ada) ada.q = Math.min(50, (ada.q || 1) + 1); else LB.push({ n, h, q: 1 });
+    lbSimpan(); lbRender();
+  }
+  $('#lbQ').addEventListener('input', lbCari);
+  $('#lbRes').addEventListener('click', (e) => {
+    const bt = e.target.closest('[data-p]'); if (!bt) return;
+    const x = PRICES[+bt.dataset.p]; if (!x) return;
+    lbTambah(label(x), x.h); lbMsg('Ditambahkan: ' + label(x) + (x.h > 0 ? '' : '. Isi harganya di daftar bawah.'));
+  });
+  $('#lbManAdd').addEventListener('click', () => {
+    const h = Math.round(Number($('#lbManH').value) || 0);
+    if (h <= 0) { lbMsg('Isi harganya dulu.', true); $('#lbManH').focus(); return; }
+    lbTambah($('#lbManN').value, h); $('#lbManN').value = ''; $('#lbManH').value = ''; lbMsg('');
+  });
+  $('#lbManH').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('#lbManAdd').click(); } });
+  $('#lbList').addEventListener('input', (e) => {
+    const li = e.target.closest('li[data-i]'); if (!li) return;
+    const x = LB[+li.dataset.i]; if (!x) return;
+    if (e.target.matches('[data-h]')) {
+      x.h = Math.round(Number(e.target.value) || 0);
+      const k = kodeHarga(x.h); li.querySelector('.kd').textContent = k || 'isi harga';
+    } else if (e.target.matches('[data-q]')) x.q = Math.max(1, Math.min(50, Math.round(Number(e.target.value) || 1)));
+    lbSimpan();
+    $('#lbCnt').textContent = LB.reduce((a, y) => a + (kodeHarga(y.h) ? Math.max(1, y.q || 1) : 0), 0);
+    lbPreview();
+  });
+  $('#lbList').addEventListener('click', (e) => {
+    const xb = e.target.closest('[data-x]'); if (!xb) return;
+    LB.splice(+xb.closest('li').dataset.i, 1); lbSimpan(); lbRender();
+  });
+  $('#lbNama').checked = store.get('k77gs.labelNama', false) === true;
+  $('#lbUk').value = String(store.get('k77gs.labelUk', '1'));
+  $('#lbNama').addEventListener('change', () => { store.set('k77gs.labelNama', $('#lbNama').checked); lbRender(); });
+  $('#lbUk').addEventListener('change', () => { store.set('k77gs.labelUk', $('#lbUk').value); lbRender(); });
+  $('#lbClear').addEventListener('click', () => { LB = []; lbSimpan(); lbRender(); lbMsg(''); });
+  const lbTutup = () => { $('#lbDlg').hidden = true; };
+  $('#lbClose').addEventListener('click', lbTutup);
+  $('#lbDlg').addEventListener('click', (e) => { if (e.target.id === 'lbDlg') lbTutup(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#lbDlg').hidden) lbTutup(); });
+  $('#lbBtn').addEventListener('click', () => {
+    $('#lbKey').value = kunciOk(lbKunci) ? lbKunci : '';
+    lbKunciUI(); lbMsg(''); $('#lbQ').value = ''; lbCari(); lbRender();
+    $('#lbDlg').hidden = false;
+    if (kunciOk(lbKunci)) $('#lbQ').focus(); else $('#lbKey').focus();
+  });
+  $('#lbPrint').addEventListener('click', () => {
+    if (!kunciOk(lbKunci)) { lbMsg('Isi kunci kode dulu (10 huruf).', true); $('#lbKeyBox').open = true; $('#lbKey').focus(); return; }
+    const cv = labelCanvas();
+    if (!cv) { lbMsg('Belum ada label yang punya harga.', true); return; }
+    const bytes = labelBytes(cv);
+    if (BT_LANGSUNG) { btCetak(bytes, 'label', lbMsg); return; }
+    // di dalam bingkai Google / iPhone / komputer: tab baru berisi gambar label (+ tombol Cetak Bluetooth di Android)
+    const w = window.open('', '_blank');
+    if (!w) { lbMsg('Tab baru diblokir browser. Izinkan pop-up, lalu coba lagi.', true); return; }
+    w.document.open();
+    w.document.write('<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Label kode harga</title><style>' +
+      'body{margin:0;padding:16px;background:#e9ebf0;font:15px/1.4 system-ui,-apple-system,sans-serif;color:#111;text-align:center}' +
+      '.bar{display:flex;gap:8px;justify-content:center;margin-bottom:14px}' +
+      '.bar button{font:inherit;font-weight:700;min-height:44px;padding:8px 20px;border-radius:10px;border:1px solid #b9bfcc;background:#fff;color:#111}' +
+      '.bar button.go{background:#2b3fd0;border-color:#2b3fd0;color:#fff}.bar button:disabled{opacity:.55}' +
+      '.msg{margin:0 0 14px;font-weight:600}.msg:empty{display:none}.msg.bad{color:#c0262d}img{width:' + (cv.width / 8) + 'mm;background:#fff}' +
+      '@page{size:' + (cv.width === 384 ? '58mm' : '80mm') + ' auto;margin:3mm}@media print{body{padding:0;background:#fff}.bar,.msg{display:none}}</style></head><body>' +
+      '<div class="bar"><button type="button" id="bt" hidden>Cetak Bluetooth</button><button type="button" class="go" id="pr" onclick="print()">Cetak</button><button type="button" id="tutup" onclick="window.close()">Tutup</button></div>' +
+      '<p class="msg" id="msg" role="status"></p><img src="' + cv.toDataURL('image/png') + '" alt="Label kode harga">' +
+      '<script>(' + btPage.toString() + ')("' + b64(bytes) + '")<\/script></body></html>');
+    w.document.close();
+  });
 
   /* ================= mulai ================= */
   setShopTitle(settings.name);
