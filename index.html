@@ -967,6 +967,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     <ul class="lb-list" id="lbList"></ul>
     <div class="lb-opt">
       <label class="chk"><input type="checkbox" id="lbNama"> Tulis nama barang di bawah kode</label>
+      <label class="chk"><input type="checkbox" id="lbGaris"> Garis potong putus-putus</label>
       <select id="lbUk" aria-label="Ukuran label"><option value="1">Besar, 1 per baris</option><option value="2">Kecil, 2 per baris</option></select>
     </div>
     <div class="imgbox" id="lbPrev"></div>
@@ -3625,7 +3626,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
    * perbarui.py mengisi VERSI_SITUS dan menulis versi.txt dengan kode yang sama. GitHub menyimpan halaman
    * di HP sampai 10 menit, jadi halaman yang terbuka memeriksa versi.txt (tanpa cache) saat dibuka kembali
    * dan tiap 5 menit. Muat ulang memakai alamat ?v=<kode> supaya HP tidak mengambil salinan lama. */
-  const VERSI_SITUS = '6c559791ce1d';
+  const VERSI_SITUS = 'a3662ea76525';
   let versiCek = 0, versiBaru = '';
   async function cekVersi() {
     if (!VERSI_SITUS || Date.now() - versiCek < 60000) return;
@@ -3706,7 +3707,8 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     const ctx = cv.getContext('2d');
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, width, H);
     ctx.fillStyle = ctx.strokeStyle = '#000'; ctx.textAlign = 'center';
-    const putus = (x1, y1, x2, y2) => { ctx.save(); ctx.lineWidth = 2; ctx.setLineDash([8, 6]); ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore(); };
+    const garis = $('#lbGaris').checked;
+    const putus = (x1, y1, x2, y2) => { if (!garis) return; ctx.save(); ctx.lineWidth = 2; ctx.setLineDash([8, 6]); ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore(); };
     let y = 0;
     baris.forEach((r, bi) => {
       const rh = tinggi[bi];
@@ -3808,6 +3810,8 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
   $('#lbNama').checked = store.get('k77gs.labelNama', false) === true;
   $('#lbUk').value = String(store.get('k77gs.labelUk', '1'));
   $('#lbNama').addEventListener('change', () => { store.set('k77gs.labelNama', $('#lbNama').checked); lbRender(); });
+  $('#lbGaris').checked = store.get('k77gs.labelGaris', true) !== false; // bawaan: pakai garis potong
+  $('#lbGaris').addEventListener('change', () => { store.set('k77gs.labelGaris', $('#lbGaris').checked); lbPreview(); });
   $('#lbUk').addEventListener('change', () => { store.set('k77gs.labelUk', $('#lbUk').value); lbRender(); });
   $('#lbClear').addEventListener('click', () => { LB = []; lbSimpan(); lbRender(); lbMsg(''); });
   const lbTutup = () => { $('#lbDlg').hidden = true; };
