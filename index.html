@@ -479,6 +479,12 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
 .sugg .pr { flex: none; padding: 4px 8px; border-radius: 7px; background: var(--tag); color: var(--tag-ink); font: 800 13.5px/1.2 var(--sans); font-variant-numeric: tabular-nums; }
 .sugg .pr.nil { background: var(--accent-soft); color: var(--muted); font-weight: 600; font-size: 12px; }
 
+/* bar "ada versi baru" (situs GitHub) */
+.verbar { position: fixed; left: 50%; top: calc(10px + env(safe-area-inset-top)); transform: translateX(-50%); z-index: 45; display: flex; align-items: center; gap: 10px;
+  width: max-content; max-width: calc(100vw - 24px); padding: 8px 8px 8px 14px; border-radius: 12px; background: var(--accent); color: var(--on-accent);
+  font-weight: 600; font-size: 14px; box-shadow: 0 6px 20px rgba(0, 0, 0, .3); }
+.verbar .btn { background: var(--on-accent); color: var(--accent); border-color: var(--on-accent); flex: none; }
+
 @media print {
   body { background: #fff; }
   body.print-nota * { visibility: hidden !important; }
@@ -489,6 +495,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
 </style>
 </head>
 <body>
+<div class="verbar" id="verBar" role="status" hidden><span>Ada versi baru halaman kasir.</span><button type="button" class="btn sm" id="verBtn">Muat ulang</button></div>
 <header class="sign">
   <div class="wrap">
     <div class="eyebrow">Kios</div>
@@ -3508,6 +3515,30 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     finally { uSibuk = false; renderUDlg(); }
   });
   setUtang(store.get('k77gs.utang', []));
+
+  /* ---------- pemberitahuan versi baru (hanya di situs GitHub) ----------
+   * perbarui.py mengisi VERSI_SITUS dan menulis versi.txt dengan kode yang sama. GitHub menyimpan halaman
+   * di HP sampai 10 menit, jadi halaman yang terbuka memeriksa versi.txt (tanpa cache) saat dibuka kembali
+   * dan tiap 5 menit. Muat ulang memakai alamat ?v=<kode> supaya HP tidak mengambil salinan lama. */
+  const VERSI_SITUS = '8cc1eeadcc1e';
+  let versiCek = 0, versiBaru = '';
+  async function cekVersi() {
+    if (!VERSI_SITUS || Date.now() - versiCek < 60000) return;
+    versiCek = Date.now();
+    try {
+      const r = await fetch('versi.txt?t=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) return;
+      const v = (await r.text()).trim();
+      if (/^[0-9a-f]{12}$/.test(v) && v !== VERSI_SITUS) { versiBaru = v; $('#verBar').hidden = false; }
+    } catch (e) { /* sinyal putus: coba lagi nanti */ }
+  }
+  $('#verBtn').addEventListener('click', () => {
+    writeDraft(); // nota yang sedang dibuat ikut kembali setelah dimuat ulang
+    location.replace(location.pathname + '?v=' + versiBaru);
+  });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') cekVersi(); });
+  setInterval(cekVersi, 5 * 60000);
+  setTimeout(cekVersi, 3000);
 
   /* ================= mulai ================= */
   setShopTitle(settings.name);
