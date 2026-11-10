@@ -213,7 +213,8 @@ details[open] summary { margin-bottom: 10px; }
 .nota b { font-weight: 700; }
 .nota .bigl { font-size: 1.5em; font-weight: 700; }
 .nota .tall { display: inline-block; transform: scaleY(1.7); margin: .45em 0; }
-.nota .stampbox { display: block; text-align: right; line-height: 0; margin-top: 2mm; white-space: normal; }
+.nota .totrow { position: relative; z-index: 0; }
+.nota .stampbox { position: absolute; right: -1mm; top: 50%; transform: translateY(-50%); z-index: -1; line-height: 0; opacity: .38; pointer-events: none; }
 .nota .stampbox img { width: 24mm; height: 24mm; }
 .nota.p80 .stampbox img, .nota.pA5 .stampbox img { width: 30mm; height: 30mm; }
 
@@ -2616,7 +2617,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
         (x.s.length <= W - q.length ? [x.s] : wrap(x.s, W - q.length)).forEach((s) => add(' '.repeat(q.length) + s, x.b ? { b: 1 } : null));
       });
     });
-    add(dash);
+    add(dash, { sum: 1 });
     if (settings.showQty && c.lines.length) add(lr('Total item', nfq.format(c.qty)));
     add('='.repeat(W));
     // TOTAL: di printer Bluetooth dicetak sebagai gambar ~1,5x (huruf printer hanya bisa 1x atau 2x)
@@ -2660,11 +2661,77 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
       b.push(v);
     }
   }
+  // stempel tipis: pola titik separuh tinta (thermal hanya hitam/putih), dan dikosongkan 2 titik di sekitar tulisan
+  // supaya angka di atasnya tetap terbaca. Tulisan sudah tergambar hitam di ctx; hasilnya hitam-putih murni.
+  function stampBehind(ctx, w, h, cx, cy, R) {
+    const img = ctx.getImageData(0, 0, w, h), px = img.data, n = w * h, r = 2;
+    const ink = new Uint8Array(n), tmp = new Uint8Array(n), halo = new Uint8Array(n);
+    for (let i = 0; i < n; i++) ink[i] = (px[i * 4] * 299 + px[i * 4 + 1] * 587 + px[i * 4 + 2] * 114) / 1000 < 150 ? 1 : 0;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let v = 0; for (let k = Math.max(0, x - r), e = Math.min(w - 1, x + r); k <= e && !v; k++) v = ink[y * w + k]; tmp[y * w + x] = v;
+    }
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let v = 0; for (let k = Math.max(0, y - r), e = Math.min(h - 1, y + r); k <= e && !v; k++) v = tmp[k * w + x]; halo[y * w + x] = v;
+    }
+    const sc = document.createElement('canvas'); sc.width = w; sc.height = h;
+    const sx = sc.getContext('2d'); drawStamp(sx, cx, cy, R, '#000');
+    const sp = sx.getImageData(0, 0, w, h).data;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = y * w + x, on = ink[i] || (!halo[i] && sp[i * 4 + 3] > 110 && !((x + y) & 1)), v = on ? 0 : 255;
+      px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = v; px[i * 4 + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+  // bagian bawah nota (garis setelah barang sampai ucapan penutup) sebagai SATU gambar raster,
+  // supaya stempel bisa dicetak tipis di belakang TOTAL. Huruf digambar per kolom seperti huruf printer (12x24 titik).
+  function rasterTail(b, lines, W) {
+    const width = W === 32 ? 384 : 576, bw = width / 8, cw = width / W, LH = 30, SY = 1.2;
+    const m = document.createElement('canvas').getContext('2d');
+    let fs = 24;
+    for (; fs > 12; fs--) { m.font = '700 ' + fs + 'px ' + CANVAS_FONT; if (m.measureText('0').width <= cw) break; }
+    const tot = lines.find((l) => l.tr);
+    let ts = 32; const tf = () => '700 ' + ts + 'px ' + CANVAS_FONT;
+    if (tot) for (; ts > 16; ts--) { m.font = tf(); if (m.measureText('0').width <= 19 && m.measureText(tot.tl + '  ' + tot.tr).width <= width - 4) break; }
+    const TH = Math.round(ts * 1.3);
+    let y = 0, totY = 0;
+    const pos = lines.map((l) => { const o = { y, h: l.tr ? TH : LH }; if (l.tr) totY = y + o.h / 2; y += o.h; return o; });
+    const R = Math.round(width * 0.2), top = Math.max(0, R + 2 - totY), h = Math.max(top + y, top + totY + R + 2);
+    const cv = document.createElement('canvas'); cv.width = width; cv.height = h;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, width, h);
+    ctx.fillStyle = ctx.strokeStyle = '#000'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round'; ctx.lineWidth = 0.7;
+    lines.forEach((l, i) => {
+      const ym = top + pos[i].y + pos[i].h / 2;
+      if (l.tr) {
+        ctx.font = tf();
+        ctx.textAlign = 'left'; ctx.fillText(l.tl, 1, ym); ctx.strokeText(l.tl, 1, ym);
+        ctx.textAlign = 'right'; ctx.fillText(l.tr, width - 2, ym); ctx.strokeText(l.tr, width - 2, ym);
+        return;
+      }
+      ctx.font = '700 ' + fs + 'px ' + CANVAS_FONT; ctx.textAlign = 'center';
+      [...(l.c ? center(l.s, W) : l.s)].forEach((ch, k) => {
+        if (ch === ' ') return;
+        ctx.save(); ctx.translate((k + 0.5) * cw, ym); ctx.scale(1, SY);
+        ctx.fillText(ch, 0, 0); if (l.b) ctx.strokeText(ch, 0, 0);
+        ctx.restore();
+      });
+    });
+    stampBehind(ctx, width, h, width - R - 4, top + totY, R);
+    const px = ctx.getImageData(0, 0, width, h).data;
+    b.push(0x1b, 0x61, 0, 0x1b, 0x45, 0, 0x1d, 0x76, 0x30, 0x00, bw & 0xff, bw >> 8, h & 0xff, h >> 8);
+    for (let yy = 0; yy < h; yy++) for (let x = 0; x < bw; x++) {
+      let v = 0;
+      for (let k = 0; k < 8; k++) { if (px[(yy * width + x * 8 + k) * 4] < 128) v |= 0x80 >> k; }
+      b.push(v);
+    }
+  }
   function escpos() {
-    const b = [0x1b, 0x40];
-    receiptLines(cols()).forEach((l) => {
+    const b = [0x1b, 0x40], W = cols(), lines = receiptLines(W);
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i];
+      if (l.sum && settings.stamp && calc().lines.length) { rasterTail(b, lines.slice(i), W); break; }
       b.push(0x1b, 0x61, l.c ? 1 : 0, 0x1b, 0x45, l.b ? 1 : 0);
-      if (l.tr) { rasterRow(b, l.tl, l.tr); return; }
+      if (l.tr) { rasterRow(b, l.tl, l.tr); continue; }
       const t = l.s;
       if (l.big) b.push(0x1d, 0x21, 0x11); // huruf 2x lebar & 2x tinggi
       else if (l.tall) b.push(0x1d, 0x21, 0x01); // huruf 2x tinggi
@@ -2672,23 +2739,8 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
       b.push(0x0a);
       if (l.big || l.tall) b.push(0x1d, 0x21, 0x00);
       if (l.gap) b.push(0x1b, 0x4a, l.gap); // dorong kertas beberapa titik (jarak kecil, kurang dari satu baris)
-    });
-    b.push(0x1b, 0x61, 0, 0x1b, 0x45, 0);
-    if (settings.stamp) {
-      // gambar raster ESC/POS (GS v 0) selebar kepala printer, stempel di kanan
-      const width = cols() === 32 ? 384 : 576, R = Math.round(width * 0.2), h = R * 2 + 8, bw = width / 8;
-      const cv = document.createElement('canvas'); cv.width = width; cv.height = h;
-      const ctx = cv.getContext('2d');
-      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, width, h);
-      drawStamp(ctx, width - R - 8, h / 2, R, '#000');
-      const px = ctx.getImageData(0, 0, width, h).data;
-      b.push(0x0a, 0x1d, 0x76, 0x30, 0x00, bw & 0xff, bw >> 8, h & 0xff, h >> 8);
-      for (let y = 0; y < h; y++) for (let x = 0; x < bw; x++) {
-        let v = 0;
-        for (let k = 0; k < 8; k++) { const i = (y * width + x * 8 + k) * 4; if (px[i] < 128) v |= 0x80 >> k; }
-        b.push(v);
-      }
     }
+    b.push(0x1b, 0x61, 0, 0x1b, 0x45, 0);
     // dorong kertas 5 baris: cukup supaya baris terakhir lewat gigi sobekan (7 baris terlalu boros, 4 terlalu mepet)
     b.push(0x1b, 0x45, 0, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a);
     return new Uint8Array(b);
@@ -2775,13 +2827,14 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     $('#nota').innerHTML = receiptLines(W).map((l) => {
       if (l.big) return '<div class="bigl" style="text-align:center' + (l.gap ? ';margin-bottom:.3em' : '') + '">' + esc(l.s) + '</div>';
       const s = esc(l.c ? center(l.s, W) : l.s);
+      if (l.tr) return '<span class="totrow"><b class="tall">' + s + '</b></span>';
       if (l.tall) return '<b class="tall">' + s + '</b>';
       return l.b ? '<b>' + s + '</b>' : s;
     }).join('\n').replace(/<\/div>\n/g, '</div>').replace(/\n<div/g, '<div');
     if (settings.stamp && calc().lines.length) {
       const u = stampURL();
       if (stampImg.getAttribute('src') !== u) stampImg.src = u;
-      $('#nota').append(stampBox); // elemen gambar yang sama dipakai ulang, tidak dimuat ulang
+      ($('#nota .totrow') || $('#nota')).append(stampBox); // di belakang TOTAL; elemen gambar yang sama dipakai ulang
     }
   }
   // pratinjau digambar paling banyak sekali per bingkai layar, jadi mengetik tetap lancar
@@ -2877,7 +2930,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     rule();
     if (settings.showQty && c.lines.length) row('Total item', nfq.format(c.qty), REG, REG);
     ops.push({ h: lh, rule: 2 }); // garis ganda sebelum TOTAL
-    row('TOTAL', rp(c.total), F(700, 1.3), F(700, 1.3), 1.4);
+    row('TOTAL', rp(c.total), F(700, 1.3), F(700, 1.3), 1.4); ops[ops.length - 1].tot = 1;
     rule();
     if (c.pay > 0) {
       row('Tunai', rp(c.pay), REG, BOLD);
@@ -2892,8 +2945,9 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     if (String(settings.footer).trim()) { gap(lh * .6); center(String(settings.footer).trim(), BOLD, 1, 1.35); }
     gap(lh * 2); // ruang kosong di bawah supaya tulisan terakhir tidak terpotong saat kertas disobek
 
-    const stampR = settings.stamp ? Math.round(width * 0.2) : 0;
-    const height = ops.reduce((a, o) => a + o.h, 0) + (stampR ? stampR * 2 + lh : 0);
+    const stampR = settings.stamp && c.lines.length ? Math.round(width * 0.2) : 0;
+    let totY = 0; ops.reduce((a, o) => { if (o.tot) totY = a + o.h / 2; return a + o.h; }, 0);
+    const height = Math.max(ops.reduce((a, o) => a + o.h, 0), stampR ? totY + stampR + 4 : 0);
     const cv = document.createElement('canvas');
     cv.width = width; cv.height = height;
     const ctx = cv.getContext('2d');
@@ -2918,7 +2972,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
       }
       y += o.h;
     });
-    if (stampR) drawStamp(ctx, width - mx - stampR, y + lh / 2 + stampR, stampR, '#000000');
+    if (stampR) stampBehind(ctx, width, height, width - mx - stampR, totY, stampR);
     const img = ctx.getImageData(0, 0, width, height), px = img.data;
     for (let i = 0; i < px.length; i += 4) {
       const v = (px[i] * 299 + px[i + 1] * 587 + px[i + 2] * 114) / 1000 < 150 ? 0 : 255;
@@ -3520,7 +3574,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
    * perbarui.py mengisi VERSI_SITUS dan menulis versi.txt dengan kode yang sama. GitHub menyimpan halaman
    * di HP sampai 10 menit, jadi halaman yang terbuka memeriksa versi.txt (tanpa cache) saat dibuka kembali
    * dan tiap 5 menit. Muat ulang memakai alamat ?v=<kode> supaya HP tidak mengambil salinan lama. */
-  const VERSI_SITUS = '8cc1eeadcc1e';
+  const VERSI_SITUS = '77e63361330c';
   let versiCek = 0, versiBaru = '';
   async function cekVersi() {
     if (!VERSI_SITUS || Date.now() - versiCek < 60000) return;
