@@ -3625,7 +3625,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
    * perbarui.py mengisi VERSI_SITUS dan menulis versi.txt dengan kode yang sama. GitHub menyimpan halaman
    * di HP sampai 10 menit, jadi halaman yang terbuka memeriksa versi.txt (tanpa cache) saat dibuka kembali
    * dan tiap 5 menit. Muat ulang memakai alamat ?v=<kode> supaya HP tidak mengambil salinan lama. */
-  const VERSI_SITUS = '802b9eaa02a4';
+  const VERSI_SITUS = '6c559791ce1d';
   let versiCek = 0, versiBaru = '';
   async function cekVersi() {
     if (!VERSI_SITUS || Date.now() - versiCek < 60000) return;
@@ -3706,6 +3706,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     const ctx = cv.getContext('2d');
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, width, H);
     ctx.fillStyle = ctx.strokeStyle = '#000'; ctx.textAlign = 'center';
+    const putus = (x1, y1, x2, y2) => { ctx.save(); ctx.lineWidth = 2; ctx.setLineDash([8, 6]); ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore(); };
     let y = 0;
     baris.forEach((r, bi) => {
       const rh = tinggi[bi];
@@ -3717,8 +3718,10 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
         yy += Math.round(maxK * 0.82) + 8;
         ctx.font = '700 ' + nf + 'px ' + FONT_NAMA;
         c.nama.forEach((l) => { ctx.fillText(l, cx, yy + Math.round(nf * 0.62)); yy += Math.round(nf * 1.25); });
+        if (ci > 0) putus(cw * ci, y + 4, cw * ci, y + rh - 4);
       });
       y += rh;
+      putus(0, y, width, y); // garis potong
     });
     const img = ctx.getImageData(0, 0, width, H), px = img.data;
     for (let i = 0; i < px.length; i += 4) { const v = px[i] < 150 ? 0 : 255; px[i] = px[i + 1] = px[i + 2] = v; px[i + 3] = 255; }
