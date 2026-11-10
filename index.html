@@ -3625,7 +3625,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
    * perbarui.py mengisi VERSI_SITUS dan menulis versi.txt dengan kode yang sama. GitHub menyimpan halaman
    * di HP sampai 10 menit, jadi halaman yang terbuka memeriksa versi.txt (tanpa cache) saat dibuka kembali
    * dan tiap 5 menit. Muat ulang memakai alamat ?v=<kode> supaya HP tidak mengambil salinan lama. */
-  const VERSI_SITUS = '782985b72f38';
+  const VERSI_SITUS = '802b9eaa02a4';
   let versiCek = 0, versiBaru = '';
   async function cekVersi() {
     if (!VERSI_SITUS || Date.now() - versiCek < 60000) return;
@@ -3676,7 +3676,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
   // gambar label hitam-putih selebar kepala printer; n = 1 atau 2 label per baris
   function labelCanvas() {
     const width = cols() === 32 ? 384 : 576, per = +$('#lbUk').value || 1, cw = width / per, pakaiNama = $('#lbNama').checked;
-    const FONT_KODE = '"Roboto", "Arial Black", Arial, "Helvetica Neue", sans-serif', FONT_NAMA = CANVAS_FONT;
+    const FONT_KODE = 'Roboto, Arial, "Helvetica Neue", sans-serif', FONT_NAMA = CANVAS_FONT;
     const m = document.createElement('canvas').getContext('2d');
     const items = [];
     LB.forEach((x) => { const k = kodeHarga(x.h); if (k) for (let i = 0; i < Math.max(1, Math.min(50, x.q || 1)); i++) items.push({ k, n: x.n }); });
@@ -3694,7 +3694,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
       return out.map((l) => { while (l.length > 1 && m.measureText(l).width > cw - 16) l = l.slice(0, -2) + '…'; return l; });
     };
     const sel = items.map((it) => {
-      let f = maxK; m.font = '900 ' + f + 'px ' + FONT_KODE;
+      let f = maxK; m.font = '700 ' + f + 'px ' + FONT_KODE;
       const w = m.measureText(it.k).width; if (w > cw - 20) f = Math.floor(f * (cw - 20) / w);
       const nama = pakaiNama && it.n ? bungkus(it.n) : [];
       return { k: it.k, f, nama, h: pad * 2 + Math.round(maxK * 0.82) + (nama.length ? 8 + nama.length * Math.round(nf * 1.25) : 0) };
@@ -3706,23 +3706,19 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     const ctx = cv.getContext('2d');
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, width, H);
     ctx.fillStyle = ctx.strokeStyle = '#000'; ctx.textAlign = 'center';
-    const putus = (x1, y1, x2, y2) => { ctx.save(); ctx.lineWidth = 2; ctx.setLineDash([8, 6]); ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore(); };
     let y = 0;
     baris.forEach((r, bi) => {
       const rh = tinggi[bi];
       r.forEach((c, ci) => {
         const cx = cw * ci + cw / 2, isi = Math.round(maxK * 0.82) + (c.nama.length ? 8 + c.nama.length * Math.round(nf * 1.25) : 0);
         let yy = y + (rh - isi) / 2;
-        ctx.font = '900 ' + c.f + 'px ' + FONT_KODE; ctx.textBaseline = 'middle';
-        ctx.lineWidth = 1.2; ctx.lineJoin = 'round';
-        ctx.fillText(c.k, cx, yy + Math.round(maxK * 0.41)); ctx.strokeText(c.k, cx, yy + Math.round(maxK * 0.41));
+        ctx.font = '700 ' + c.f + 'px ' + FONT_KODE; ctx.textBaseline = 'middle';
+        ctx.fillText(c.k, cx, yy + Math.round(maxK * 0.41));
         yy += Math.round(maxK * 0.82) + 8;
         ctx.font = '700 ' + nf + 'px ' + FONT_NAMA;
         c.nama.forEach((l) => { ctx.fillText(l, cx, yy + Math.round(nf * 0.62)); yy += Math.round(nf * 1.25); });
-        if (ci > 0) putus(cw * ci, y + 4, cw * ci, y + rh - 4);
       });
       y += rh;
-      putus(0, y, width, y); // garis potong
     });
     const img = ctx.getImageData(0, 0, width, H), px = img.data;
     for (let i = 0; i < px.length; i += 4) { const v = px[i] < 150 ? 0 : 255; px[i] = px[i + 1] = px[i + 2] = v; px[i + 3] = 255; }
