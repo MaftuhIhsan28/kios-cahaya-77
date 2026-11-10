@@ -766,7 +766,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     </form>
     <p class="hint msg" id="uMsg" role="status" aria-live="polite"></p>
     <ul class="u-rows" id="uRows"></ul>
-    <div class="actions" style="margin-top:10px"><button type="button" class="btn ghost" id="uTutup">Tutup</button></div>
+    <div class="actions" style="margin-top:10px"><button type="button" class="btn" id="uCetakSemua" hidden>Cetak semua</button><button type="button" class="btn ghost" id="uTutup">Tutup</button></div>
   </div>
 </div>
 
@@ -2619,6 +2619,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
       add(lr('Tunai', rp(c.pay)));
       add(c.diff >= 0 ? lr('Kembalian', rp(c.diff)) : lr('Kurang', rp(-c.diff)), { b: 1 });
     }
+    if (state.dibayar) add(lr('Sudah dibayar', rp(state.dibayar)));
     if (state.utang) { // nota yang dicatat sebagai utang
       add(lr('Utang', rp(state.utang.jml)), { b: 1 });
       add('BELUM LUNAS', { c: 1, b: 1 });
@@ -2875,6 +2876,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
       row('Tunai', rp(c.pay), REG, BOLD);
       row(c.diff >= 0 ? 'Kembalian' : 'Kurang', rp(Math.abs(c.diff)), BOLD, BOLD);
     }
+    if (state.dibayar) row('Sudah dibayar', rp(state.dibayar), REG, BOLD);
     if (state.utang) {
       row('Utang', rp(state.utang.jml), BOLD, BOLD);
       center('BELUM LUNAS', BOLD, 1, 1.35);
@@ -3406,6 +3408,9 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     $('#uKTag').hidden = !u.k; $('#uKary').textContent = u.k ? 'Lepas tanda karyawan' : 'Tandai karyawan';
     $('#uBayarBtn').hidden = !(u.sisa > 0);
     if (!(u.sisa > 0)) $('#uBayar').hidden = true;
+    const terbuka = utangTerbuka();
+    $('#uCetakSemua').hidden = terbuka.rows.length < 2;
+    $('#uCetakSemua').textContent = 'Cetak semua (' + terbuka.rows.length + ')';
     $('#uRows').innerHTML = uRows === null ? '<li><span class="hint" style="margin:0">Memuat rincian…</span></li>'
       : !uRows.length ? '<li><span class="hint" style="margin:0">Belum ada catatan.</span></li>'
       : uRows.map((r) => '<li><div><span class="amt' + (r.j === 'BAYAR' ? ' bayar' : '') + '">' + (r.j === 'BAYAR' ? 'Bayar ' : 'Utang ') + rp(r.h) + '</span>' +
@@ -3452,15 +3457,33 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
     const u = uOrang();
     uAksi(u.k ? 'Melepas tanda karyawan dari ' + u.n + '.' : 'Menandai ' + u.n + ' sebagai karyawan.', (pin) => call('tandaiKaryawan', u.n, !u.k, pin), u.k ? 'Tanda karyawan dilepas.' : 'Ditandai sebagai karyawan.');
   });
-  // cetak satu catatan utang sebagai nota (BELUM LUNAS a.n. orangnya). Nota kasir yang sedang dibuat disimpan dulu lalu dikembalikan.
-  function cetakCatatan(r) {
-    const keep = { no: state.no, when: state.when, pay: state.pay, items: state.items, utang: state.utang };
-    const t = new Date(r.t);
-    Object.assign(state, { no: r.no || 'UTG-' + String(r.id).toUpperCase(), when: isNaN(t) ? new Date() : t, pay: '',
-      items: [newItem((r.ket || 'UTANG').toUpperCase(), 1, r.h, '')], utang: { nama: uOpen, jml: r.h, id: r.id } });
+  // utang yang belum lunas: catatan setelah terakhir kali sisa utangnya nol (cicilan di periode itu dijumlah)
+  function utangTerbuka() {
+    const urut = (uRows || []).slice().reverse(); // lama ke baru
+    let sisa = 0, mulai = 0;
+    urut.forEach((r, i) => { sisa += r.j === 'BAYAR' ? -r.h : r.h; if (sisa <= 0) { sisa = 0; mulai = i + 1; } });
+    const buka = urut.slice(mulai);
+    return { rows: buka.filter((r) => r.j !== 'BAYAR'), bayar: buka.filter((r) => r.j === 'BAYAR').reduce((a, r) => a + r.h, 0), sisa };
+  }
+  // cetak nota dengan isi sementara, lalu nota kasir yang sedang dibuat dikembalikan
+  function cetakSementara(isi) {
+    const keep = { no: state.no, when: state.when, pay: state.pay, items: state.items, utang: state.utang, dibayar: state.dibayar };
     const qty = settings.showQty; settings.showQty = false; // keterangan sudah memuat jumlah barangnya
+    Object.assign(state, { pay: '', dibayar: 0 }, isi);
     try { $('#printBtn').click(); }
     finally { settings.showQty = qty; Object.assign(state, keep); renderRows(); renderAll(); }
+  }
+  const tglPendek = (iso) => { const d = new Date(iso); return isNaN(d) ? '' : pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + ' '; };
+  $('#uCetakSemua').addEventListener('click', () => {
+    const t = utangTerbuka(); if (!t.rows.length) return;
+    cetakSementara({ no: 'UTG-' + uOpen.slice(0, 20), when: new Date(), dibayar: t.bayar, utang: { nama: uOpen, jml: t.sisa, id: '' },
+      items: t.rows.map((r) => newItem((tglPendek(r.t) + (r.ket || 'UTANG')).toUpperCase(), 1, r.h, '')) });
+  });
+  // cetak satu catatan utang sebagai nota (BELUM LUNAS a.n. orangnya). Nota kasir yang sedang dibuat disimpan dulu lalu dikembalikan.
+  function cetakCatatan(r) {
+    const t = new Date(r.t);
+    cetakSementara({ no: r.no || 'UTG-' + String(r.id).toUpperCase(), when: isNaN(t) ? new Date() : t,
+      items: [newItem((r.ket || 'UTANG').toUpperCase(), 1, r.h, '')], utang: { nama: uOpen, jml: r.h, id: r.id } });
   }
   let uArm = null, uArmT = 0;
   $('#uRows').addEventListener('click', async (e) => {
