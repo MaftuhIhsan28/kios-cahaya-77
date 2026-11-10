@@ -589,7 +589,6 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
           <div class="actions">
             <button type="button" class="btn primary" id="printBtn">Cetak nota</button>
             <button type="button" class="btn primary" id="imgBtn">Gambar nota (bagikan / RawBT)</button>
-            <button type="button" class="btn" id="rawbtBtn">Kirim langsung ke RawBT</button>
             <button type="button" class="btn" id="copyBtn">Salin teks nota</button>
             <button type="button" class="btn ghost" id="newBtn">Nota baru</button>
           </div>
@@ -599,7 +598,6 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
             <ol>
               <li><b>Cetak nota.</b> Membuka jendela cetak. Di HP Android pilih printer (atau “Simpan sebagai PDF”); di komputer pilih printer biasa / thermal. Di iPhone/iPad nota dibuka di tab baru lalu jendela cetak (AirPrint) muncul; printer thermal Bluetooth tidak bisa dari sini, pakai “Gambar nota” lalu bagikan ke aplikasi printernya.</li>
               <li><b>Gambar nota.</b> Membuat gambar hitam-putih selebar kertas struk. Bagikan langsung ke RawBT, aplikasi printer thermal, atau WhatsApp. Kalau menu Bagikan tidak muncul, tekan lama gambarnya lalu pilih Bagikan / Download.</li>
-              <li><b>Kirim langsung ke RawBT.</b> Hanya HP Android dengan RawBT terpasang dan printer Bluetooth sudah dipilih di RawBT.</li>
             </ol>
           </details>
         </section>
@@ -3201,22 +3199,6 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
   $('#imgClose').addEventListener('click', closeImg);
   $('#imgDlg').addEventListener('click', (e) => { if (e.target.id === 'imgDlg') closeImg(); });
 
-  $('#rawbtBtn').addEventListener('click', () => {
-    if (isEmpty()) return;
-    if (!/Android/i.test(navigator.userAgent)) { say('RawBT hanya ada di HP Android. Di komputer pakai “Cetak nota”.', true); return; }
-    let left = false;
-    const mark = () => { left = true; };
-    document.addEventListener('visibilitychange', mark, { once: true });
-    const a = document.createElement('a');
-    a.href = 'intent:base64,' + b64(escpos()) + '#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;';
-    a.target = '_top'; a.rel = 'noopener';
-    document.body.append(a); a.click(); a.remove();
-    setTimeout(() => {
-      document.removeEventListener('visibilitychange', mark);
-      if (!left) say('RawBT tidak terbuka dari halaman ini. Pakai “Gambar nota”, lalu Bagikan ke RawBT.', true);
-    }, 2500);
-  });
-
   $('#pbPrint').addEventListener('click', () => $('#printBtn').click());
   $('#pbImg').addEventListener('click', () => $('#imgBtn').click());
 
@@ -3579,7 +3561,7 @@ button.tag { transition: transform .1s ease, box-shadow .12s ease; }
    * perbarui.py mengisi VERSI_SITUS dan menulis versi.txt dengan kode yang sama. GitHub menyimpan halaman
    * di HP sampai 10 menit, jadi halaman yang terbuka memeriksa versi.txt (tanpa cache) saat dibuka kembali
    * dan tiap 5 menit. Muat ulang memakai alamat ?v=<kode> supaya HP tidak mengambil salinan lama. */
-  const VERSI_SITUS = '4a101070832e';
+  const VERSI_SITUS = '23f72f44279d';
   let versiCek = 0, versiBaru = '';
   async function cekVersi() {
     if (!VERSI_SITUS || Date.now() - versiCek < 60000) return;
